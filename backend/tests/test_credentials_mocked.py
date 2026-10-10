@@ -46,3 +46,31 @@ def test_authenticated_routes_and_no_key_echo(monkeypatch):
     assert client.get("/providers", headers=auth).json()["providers"][0]["configured"]
     assert client.delete("/providers/openai/key", headers=auth).status_code == 200
     assert not client.get("/providers", headers=auth).json()["providers"][0]["configured"]
+
+
+def test_mocked_windows_vault_chunks_large_oauth_tokens_without_plaintext_files():
+    from app.credentials import SegmentedWindowsVault, SERVICE
+    raw=MemoryVault()
+    protected=SegmentedWindowsVault(raw)
+    secret='fake-oauth-claims-'*900
+    protected.set_password(SERVICE,'tokens:test',secret)
+    manifest=raw.get_password(SERVICE,'tokens:test')
+    assert manifest.startswith('@agent-wincred-v1:')
+    assert secret not in manifest
+    assert protected.get_password(SERVICE,'tokens:test')==secret
+    newer='rotated-oauth-tokens-'*940
+    protected.set_password(SERVICE,'tokens:test',newer)
+    assert protected.get_password(SERVICE,'tokens:test')==newer
+    assert not any('fake-oauth-claims' in s for s in raw.keys.values())
+    protected.delete_password(SERVICE,'tokens:test')
+    assert protected.get_password(SERVICE,'tokens:test') is None
+    assert not raw.keys
+
+def test_mocked_chunk_integrity_failure_is_not_reported_as_connected():
+    from app.credentials import SegmentedWindowsVault,SERVICE,CredentialUnavailable
+    raw=MemoryVault(); protected=SegmentedWindowsVault(raw)
+    protected.set_password(SERVICE,'tokens:test','large-token'*1200)
+    segments=[name for (_,name) in raw.keys if ':part:' in name]
+    raw.keys[(SERVICE,segments[0])]='corrupted'
+    with pytest.raises(CredentialUnavailable,match='integrity'):
+        protected.get_password(SERVICE,'tokens:test')
