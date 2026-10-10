@@ -26,3 +26,4 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["live: requires actual MetaTrader 5 Windows terminal", "provider_live: requires a real provider API key"]
