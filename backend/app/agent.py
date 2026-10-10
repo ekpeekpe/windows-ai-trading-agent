@@ -7,7 +7,7 @@ from .tools import ToolRegistry
 
 SYSTEM = ("You are an MT5 read-only assistant. Never invent market data, order outcomes, "
           "or terminal status. Only report checked tool data. Never claim a trade or chart "
-          "operation succeeded. You cannot submit orders or execute code.")
+          "operation succeeded without verified tool results. You cannot submit orders or execute code.")
 
 class AgentCancelled(RuntimeError):
     pass
