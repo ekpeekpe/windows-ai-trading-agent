@@ -43,7 +43,7 @@ def test_http_to_agent_tool_result_roundtrip(monkeypatch):
     completions = MockCompletions()
     sdk_client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
     monkeypatch.setattr(main, 'mt5', terminal)
-    monkeypatch.setattr(main, 'OpenAIAgent', lambda tools: OpenAIAgent(client=sdk_client, tools=tools))
+    monkeypatch.setattr(main, 'OpenAIAgent', lambda tools, api_key=None: OpenAIAgent(client=sdk_client, tools=tools))
     monkeypatch.setenv('AGENT_LOCAL_TOKEN', TOKEN)
     monkeypatch.setenv('OPENAI_API_KEY', 'fake-key-only-in-test')
     monkeypatch.delenv('ENABLE_CHART_CONTROL', raising=False)
