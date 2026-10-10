@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   package-windows:
     runs-on: windows-latest
