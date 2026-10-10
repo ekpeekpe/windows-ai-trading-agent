@@ -1,38 +1,39 @@
-# Pilot status — 2026-10-10
+# Pilot status — evidence recorded 2026-10-10
 
-**Development implementation only; not a completed Windows acceptance-tested trading agent.**
+This is a development pilot, **not** a verified Windows MT5 release. Real trade submission remains disabled.
 
-## Results actually observed
+## Executed in Linux development runtime (Python 3.13.5)
 
-- **PASS** — Python portable backend tests on Linux/Python 3.13: **45 passed, 2 skipped** at last local run. Tests use explicit mocked MT5/provider/chart/speech dependencies; passing results do not prove any live integration.
-- **PASS** — Python source `compileall` completed and FastAPI `GET /health` returned HTTP 200 with `trading_enabled:false`, `chart_control_enabled:false` and `authentication_required:true`.
-- **PASS** — Implemented changes committed to the private GitHub repository; latest SHA should be verified from the branch before deployment.
-- **BLOCKED** — Real Windows MetaTrader 5 account, read-only quotes and OHLC retrieval: no authenticated Windows terminal available here.
-- **BLOCKED** — Actual OpenAI, Anthropic or Gemini API calls: no live API credentials were used. The tool-call tests for all three use explicit fakes.
-- **BLOCKED** — Microphone/transcription and speech output with Windows hardware: no real speech provider or audio hardware used. Audio mock tests pass only.
-- **BLOCKED** — MQL5 companion compilation and live chart/indicator change: no MetaEditor or MT5 available. File IPC simulated tests passed; never classify those as real chart operations.
-- **BLOCKED** — Frontend build in local container: `npm run build` produced TypeScript missing React/JSX-module errors because Node dependencies are not available offline. Re-test on a connected Windows machine and inspect GitHub CI.
-- **BLOCKED** — Tauri 2 desktop/installer validation: Rust and Windows toolchain are absent. Tauri dev scaffold exists, but the backend is started separately; no production sidecar or installer.
-- **NOT TESTED** — Demo-order execution and result reconciliation. There is no broker order submission endpoint; trade execution is deliberately disabled.
-- **NOT TESTED** — GitHub Actions job results: workflow source is present, but no successful workflow run has been verified through the available repository connection.
+- **PASS:** `python -m pytest -q`: **45 passed, 2 skipped** in approximately 1.4 seconds, against the available local source snapshot with the MT5 quote and HTTP regression changes. The two opt-in tests require a real MT5 terminal and live AI credentials. The local snapshot is not a full authenticated checkout, so GitHub CI must independently verify the complete remote tree.
+- **PASS:** `python -m compileall -q app`.
+- **PASS:** Uvicorn started a real HTTP service on `127.0.0.1:18765`. Actual HTTP requests returned `GET /health = 200`, unauthenticated `GET /terminal = 401`, authenticated `GET /terminal = 503` with the clear missing-MT5 diagnostic, and authenticated `POST /chat = 503` with the clear missing-API-key diagnostic.
+- **PASS (MOCKED ONLY):** HTTP chat route -> mocked OpenAI tool call -> restricted MT5 quote tool -> fake terminal quote -> mocked provider response. The test quote source is explicitly `MOCKED_NOT_REAL`; this is **not** a live price, provider API, UI-browser test, or broker connection.
+- **PASS (MOCKED ONLY):** rejected and replayed trade proposals, exact binding/expiry, disabled execution, tool permissions, agent loop, mocked MT5 disconnect and quote rejection.
+- **BLOCKED:** offline `npm ci` cannot retrieve `@tauri-apps/cli`; no dependency installation or React production build was completed locally.
+- **BLOCKED:** offline `pip install -e '.[dev]' --no-index` cannot obtain build dependencies; tests used already installed portable Python packages (OpenAI/Anthropic/Gemini SDKs and MetaTrader5 are absent).
+- **NOT TESTED:** GitHub Actions completion/results; workflow source includes Linux backend, Windows portable tests and one frontend build job.
 
-## Features present in source
+## Code presently implemented (not evidence of live acceptance)
 
-- Official MetaTrader5 Python gateway for an already authenticated terminal (status, selected account, symbol list/specifications, timestamped quotes, historical rates, positions and pending orders), with no fallback to fabricated data.
-- OpenAI, Anthropic and Gemini official-SDK tool adapters with bounded loops and the same schema-validated tool registry.
-- Authenticated loopback FastAPI, typed React chat, provider selector, terminal diagnostics, browser microphone recording with OpenAI transcription, OS speech synthesis, repeat and client stop.
-- Chart-only MQL5 companion plus atomic file request/response IPC for OPEN, SMA and EMA. Chart tools are disabled by default until explicitly enabled.
-- Single-use, expiring and context-bound non-executable proposal approvals with local redacted audit events. Both rejection and acknowledgement cause **zero broker order submissions**.
+- FastAPI development backend with local token on protected routes.
+- OpenAI, Anthropic, Gemini adapter source with official SDK invocation and read-only registered tools.
+- MT5 Python wrapper for terminal/account status, symbol specs, fresh quotes, rates, positions and orders. A hidden symbol may be selected in Market Watch; no account trading is performed.
+- React typed chat, recorded microphone transcription, browser speech playback and proposal preview.
+- Restricted, opt-in chart-only MQL5 companion and file IPC, **not compiled or tested here**.
+- Proposal acknowledgements return `approved_not_executed`; broker order sending is not implemented.
 
-## Known limitations requiring engineering work
+## Mandatory real Windows acceptance — BLOCKED
 
-- Exact broker volume/margin/risk validation, durable approval contexts, execution idempotency, post-order reconciliation and emergency trading disable must be engineered and verified **before** any real order submission is allowed.
-- Frontend Stop aborts a client request, but cannot forcibly cancel a synchronous provider request already running server-side.
-- Local token uses a developer-configured environment variable. Provider credentials are in backend environment variables; Windows Credential Manager integration is not implemented. Development HTTP API must remain bound to loopback.
-- The MQL5 fixed-file protocol is not cryptographically authenticated against malicious same-user local processes and cannot be extended to trade operations without a security redesign.
-- RSI/MACD/Bollinger chart configuration, removal confirmations and robust chart-state inspection beyond current EA checks are incomplete.
-- Native Tauri package/sidecar launch, installer, and voice accessibility acceptance on Windows are incomplete.
+Requires Windows 10/11, 64-bit Python 3.12, Node.js 22, installed and logged-in MetaTrader 5 terminal, selected account ID, valid provider credentials and microphone/speaker hardware.
 
-## Next gate
+1. Follow [SETUP.md](SETUP.md) and install dependencies from a networked Windows machine.
+2. Run `cd backend; python -m pytest -q` and `cd desktop; npm run build`. Check GitHub Actions independently.
+3. Launch backend + frontend; check terminal status. Retrieve a real fresh bid/ask. Run `RUN_LIVE_MT5=1 python -m pytest -q -m live` in the backend on Windows. Market may be closed; stale quotes must fail rather than appear live.
+4. Only with an API key and MT5, run the opt-in tool workflow `RUN_LIVE_AI=1 python -m pytest -q -m provider_live`.
+5. Compile the MQL5 EA with MetaEditor and visually verify EURUSD H1 and SMA20 after confirmed IPC response. Do not treat a queued command as success.
+6. Test microphone, transcription, screen-reader focus, repeat speech and speaker output on actual hardware.
+7. Do not place any live or demo orders during this milestone.
 
-Follow `docs/SETUP.md` and `docs/TESTING.md`: install dependencies on target Windows machine, verify the Actions build, run opt-in **real** MT5 quote and OpenAI tool tests, compile the EA, check an actual H1 chart and SMA 20, and test push-to-talk/voice output. Keep account execution disabled until risk and reconciliation work is completed.
+## Security
+
+The HTTP backend is loopback-only; development credentials are process environment variables, not yet an OS credential store. Never expose its port, commit tokens, or interpret fabricated test data as actual MT5 results. Approval is only a proposal acknowledgement; trade execution is disabled. Frontend cancellation cannot guarantee a synchronous provider request is terminated on the server. Tauri bundling/sidecar integration is not finished.
