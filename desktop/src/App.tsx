@@ -98,6 +98,21 @@ export default function App() {
   useEffect(()=>{endRef.current?.scrollIntoView({behavior:'smooth'});},[lines,busy]);
   useEffect(()=>{if(dialog)dialogRef.current?.focus();},[dialog]);
   useEffect(()=>{
+    if(!dialog)return;
+    const root=document.querySelector<HTMLElement>('.dialog');
+    if(!root)return;
+    const keepFocus=(event:KeyboardEvent)=>{
+      if(event.key!=='Tab')return;
+      const items=Array.from(root.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')).filter(el=>el.getClientRects().length>0);
+      if(!items.length)return;
+      const first=items[0],last=items[items.length-1],current=document.activeElement;
+      if(event.shiftKey&&(current===first||current===dialogRef.current)){event.preventDefault();last.focus();}
+      else if(!event.shiftKey&&current===last){event.preventDefault();first.focus();}
+    };
+    root.addEventListener('keydown',keepFocus);
+    return()=>root.removeEventListener('keydown',keepFocus);
+  },[dialog]);
+  useEffect(()=>{
     const onKey=(e:KeyboardEvent)=>{
       if(e.key==='Escape'){setMenu(null);if(dialog)setDialog(null);}
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='n'){e.preventDefault();newChat();}
@@ -224,7 +239,14 @@ export default function App() {
         {menus.map(m=><div className="menu-root" key={m.name} onClick={e=>e.stopPropagation()}>
           <button type="button" className={'menu-trigger '+(menu===m.name?'active':'')} aria-expanded={menu===m.name}
             aria-haspopup="menu" onClick={()=>setMenu(menu===m.name?null:m.name)}>{m.name}</button>
-          {menu===m.name&&<div className="menu-panel" role="menu">
+          {menu===m.name&&<div className="menu-panel" role="menu" onKeyDown={e=>{
+            if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+              e.preventDefault();
+              const items=Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+              const index=items.indexOf(document.activeElement as HTMLButtonElement);
+              items[(index+(e.key==='ArrowDown'?1:-1)+items.length)%items.length]?.focus();
+            }
+          }}>
             {m.items.map(item=><button type="button" role="menuitem" key={item.label} disabled={item.disabled}
               title={item.hint} onClick={()=>{item.run();setMenu(null);}}>{item.label}</button>)}
           </div>}
