@@ -1,11 +1,11 @@
-# Architecture and implementation boundaries
+# Development architecture
 
-- Desktop development shell: React, TypeScript, Vite, with a local /api proxy. Tauri 2 production shell pending.
-- Backend: FastAPI served on 127.0.0.1 with Python business logic.
-- MT5 adapter: imports the official MetaTrader5 package only when a requested operation is executed; connects using an already signed-in terminal and calls shutdown after each operation.
-- Agent: OpenAI official SDK with a maximum of four response iterations and registered read-only tools. Provider APIs receive the user's instruction, tool descriptions, and tool results; they never receive broker passwords.
-- Tools: static allowlist for status, quotes, positions; Pydantic argument validation.
-- Safety: a separate approval state machine. Approved proposals are NOT executable and do not call MT5 order_send.
-- Unimplemented: multi-provider routing, chart-control EA and IPC, secure packaged Tauri transport, cancellation, voice/audio, full trading controls.
+- **UI:** React/TypeScript/Vite over loopback development proxy `/api`. Minimal Tauri 2 dev shell. The Python backend is launched manually; no production sidecar or MSI installer exists.
+- **Authentication:** local bearer-like access token in `x-agent-token` header. API keys live only in backend environment variables (no OS credential vault yet).
+- **Agent:** bounded provider-specific adapters for OpenAI chat completions, Anthropic messages and Google Gen AI function calls; all share the typed tool registry and cannot call arbitrary code or shell.
+- **MT5:** official `MetaTrader5` Python gateway used only with a real signed-in Windows terminal. Pinned terminal/account, actual status, symbols/specifications, ticks, bars, positions, orders. No simulated data in production paths.
+- **Charts:** restricted, optional `ChartIPC` + MQL5 companion with fixed request/response files under MT5 Common/Files; supported commands OPEN/SMA/EMA. Safe unknown outcomes do not retry automatically. EA remains uncompiled and real-terminal untested.
+- **Speech:** WebView/browser microphone capture, OpenAI STT backend, system speechSynthesis output. Review transcription before send; voice cannot approve financial execution.
+- **Safety:** drafts are immutable proposals with expiry, exact-input/context binding, single-use decisions, and redacted append-only event audit. Both acknowledgement and rejection are explicitly **non-executing**. No broker order submission/reconciliation.
 
-This is a foundation rather than a definition-of-done first pilot. See STATUS.md.
+See `docs/SETUP.md`, `docs/TESTING.md` and `docs/STATUS.md`. This implementation is extensible but **not production-ready**.
