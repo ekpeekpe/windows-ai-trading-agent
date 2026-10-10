@@ -17,10 +17,10 @@ def perform(tools: ToolRegistry, name: str, arguments: dict) -> dict:
 
 
 class AnthropicAgent:
-    def __init__(self, client=None, tools=None):
+    def __init__(self, client=None, tools=None, api_key=None):
         if client is None:
             from anthropic import Anthropic
-            client = Anthropic(timeout=20, max_retries=0)
+            client = Anthropic(api_key=api_key, timeout=20, max_retries=0)
         self.client = client
         self.tools = tools if tools is not None else ToolRegistry()
 
@@ -58,10 +58,10 @@ class AnthropicAgent:
 
 
 class GeminiAgent:
-    def __init__(self, client=None, tools=None, types=None):
+    def __init__(self, client=None, tools=None, types=None, api_key=None):
         if client is None:
             from google import genai
-            client = genai.Client()
+            client = genai.Client(api_key=api_key)
         if types is None:
             from google.genai import types
         self.client = client
