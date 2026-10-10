@@ -50,10 +50,20 @@ Real terminal/provider tests are opt-in; see `docs/TESTING.md`. All production p
 
 A Windows GitHub Actions workflow at `.github/workflows/windows-installer.yml` attempts to bundle the Python backend (including the MT5 package) into a native Tauri 2 NSIS installer, with no Python or Node.js runtime installation required on customer computers. **The installer has not yet been proven to build or run on Windows; do not share it as a working release until the Actions artifact and Windows smoke test are verified.**
 
-See [docs/INSTALLER.md](docs/INSTALLER.md) for how to locate an actual successful Actions installer artifact, its limitations and the mandatory installation test. The installer does not install or launch MT5 automatically. The first-launch UI detects possible installed terminals and lets the user select one without placing trades. Provider keys can be saved via Windows Credential Manager, explicitly tested and removed. ChatGPT/Claude subscription sign-in is not yet enabled; see [docs/PROVIDER_AUTH.md](docs/PROVIDER_AUTH.md).
+See [docs/INSTALLER.md](docs/INSTALLER.md) for how to locate an actual successful Actions installer artifact, its limitations and the mandatory installation test. The installer does not install or launch MT5 automatically. The first-launch UI detects possible installed terminals and lets the user select one without placing trades. Provider keys can be saved via Windows Credential Manager, explicitly tested and removed. **Open-source ChatGPT-plan sign-in is implemented in v0.3.1** using documented dynamic OAuth registration, no pre-issued client ID and no OpenAI API key. See [ChatGPT / Codex connection instructions](docs/CHATGPT_CODEX_ELIGIBILITY.md). Claude subscription login remains unavailable; provider API keys remain supported. A real user login has not yet been verified.
 
 There is **no app license key, application subscription, trial expiry, or payment gate** in this pilot. API provider billing is independent.
 
 ### Tested portable features
 
 The Linux development environment most recently ran 54 Python tests successfully with 2 opt-in live tests skipped. This does not prove the Windows NSIS installer, provider credentials, or real MT5/voice acceptance. The packaged frontend TypeScript/Rust build and Windows sidecar freezing remain to be verified by Windows CI; check the Actions results rather than assuming a passed build.
+
+## Test without an OpenAI API key — ChatGPT plan (v0.3.1)
+
+Install the v0.3.1 Windows pilot from a **successful** Windows NSIS GitHub Actions artifact, not the older v0.3.0 executable. Open **AI Provider → Connections and API keys → ChatGPT plan (Codex) → Continue with ChatGPT**. The system browser should open the **official** OpenAI account-authorization page. After consenting, return to the app and click Refresh status; then Load account models, select a model, and Test real ChatGPT inference. The UI reports an error rather than claiming success if an eligible plan, requested scope, or completed inference is unavailable.
+
+There is no API-key charge in this account mode. ChatGPT plan limits and account eligibility still apply. Voice transcription currently uses the **separately billed OpenAI speech API**, but text chatting does not require that speech key. MT5 is optional for initial chat, and broker order execution remains disabled.
+
+**Important open-source licensing step:** the GitHub repository is public, but it currently has no OSI-compliant `LICENSE` file. The owner should select and publish an open-source license (such as MIT or Apache-2.0 after considering future commercial plans); repository visibility alone does not license redistribution. Do not assume the open-source OAuth eligibility automatically covers a paid or remotely hosted future version.
+
+See [official OSS sign-in eligibility](https://developers.openai.com/siwc/token-sharing-open-source) and [implementation details](docs/CHATGPT_CODEX_ELIGIBILITY.md).
