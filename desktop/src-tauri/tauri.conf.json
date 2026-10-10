@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Windows AI Trading Agent",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.ekpeekpe.windowsaitradingagent",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -14,7 +14,9 @@
       {
         "title": "Windows AI Trading Agent",
         "width": 1100,
-        "height": 800
+        "height": 800,
+        "minWidth": 720,
+        "minHeight": 540
       }
     ],
     "security": {
