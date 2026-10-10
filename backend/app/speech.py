@@ -5,14 +5,14 @@ import io
 class SpeechError(RuntimeError):
     pass
 
-def transcribe(audio: bytes, mime_type: str, client=None) -> str:
+def transcribe(audio: bytes, mime_type: str, client=None, api_key=None) -> str:
     if mime_type not in {"audio/webm", "audio/mp4", "audio/wav", "audio/mpeg", "audio/ogg"}:
         raise SpeechError("Unsupported microphone recording format")
     if not 100 <= len(audio) <= 10 * 1024 * 1024:
         raise SpeechError("Recording must contain 100 bytes to 10 MB")
     if client is None:
         from openai import OpenAI
-        client = OpenAI(timeout=25, max_retries=0)
+        client = OpenAI(api_key=api_key, timeout=25, max_retries=0)
     extension = {"audio/webm": ".webm", "audio/mp4": ".m4a", "audio/wav": ".wav",
                  "audio/mpeg": ".mp3", "audio/ogg": ".ogg"}[mime_type]
     file = ("recording" + extension, io.BytesIO(audio), mime_type)
