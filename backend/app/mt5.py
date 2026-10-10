@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from math import isfinite
+from time import time
 from threading import RLock
 from typing import Any, Iterator
 
@@ -69,14 +71,29 @@ class MT5ReadOnly:
                     "visible": bool(s.visible), "source": "MetaTrader5"}
 
     def quote(self, symbol: str) -> dict[str, Any]:
+        """Read an actual, fresh tick; never present an old quote as current.
+
+        SymbolSelect changes Market Watch visibility, not account positions. It is
+        used only if the requested broker symbol exists but is not visible.
+        """
         with self._session() as mt5:
-            if mt5.symbol_info(symbol) is None:
+            info = mt5.symbol_info(symbol)
+            if info is None:
                 raise MT5Unavailable(f"Symbol not available: {symbol}")
+            if not bool(info.visible) and not mt5.symbol_select(symbol, True):
+                raise MT5Unavailable(f"Cannot select {symbol} in Market Watch: {mt5.last_error()}")
             tick = mt5.symbol_info_tick(symbol)
             if tick is None or int(tick.time_msc) <= 0:
                 raise MT5Unavailable(f"No valid tick for {symbol}; check Market Watch and session")
-            return {"symbol": symbol, "bid": float(tick.bid), "ask": float(tick.ask),
-                    "time_msc": int(tick.time_msc), "source": "MetaTrader5"}
+            bid, ask, stamp = float(tick.bid), float(tick.ask), int(tick.time_msc)
+            if not all(map(isfinite, (bid, ask))) or bid <= 0 or ask <= 0 or ask < bid:
+                raise MT5Unavailable(f"Invalid bid/ask for {symbol}; no usable live quote")
+            age_seconds = time() - stamp / 1000.0
+            if age_seconds > 300 or age_seconds < -60:
+                raise MT5Unavailable(f"Stale or future-dated {symbol} quote; last tick age {age_seconds:.0f} seconds")
+            return {"symbol": symbol, "bid": bid, "ask": ask,
+                    "time_msc": stamp, "age_seconds": round(age_seconds, 2),
+                    "source": "MetaTrader5"}
 
     def rates(self, symbol: str, timeframe: str = "H1", count: int = 50) -> dict[str, Any]:
         if not 1 <= count <= 500:
