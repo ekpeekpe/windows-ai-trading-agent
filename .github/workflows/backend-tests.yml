@@ -49,3 +49,18 @@ jobs:
       - name: Type-check and build React frontend
         working-directory: desktop
         run: npm run build
+  frontend-build:
+    name: React TypeScript production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+      - name: Type check and build
+        run: npm run build
