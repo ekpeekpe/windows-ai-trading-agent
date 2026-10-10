@@ -85,7 +85,9 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let port = TcpListener::bind("127.0.0.1:0")?.local_addr()?.port();
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            let port = listener.local_addr()?.port();
+            drop(listener);
             let token = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
             let result = app.shell().sidecar("agent-backend")
                 .and_then(|command| command
