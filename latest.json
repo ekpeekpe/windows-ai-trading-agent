@@ -1,23 +1,23 @@
 {
-  "run_id": 38088640471,
-  "sha": "3d46207b1c4dd1c4c05643a82e38d100a98be5b9",
-  "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088640471",
+  "run_id": 38088646636,
+  "sha": "9debc43f4bdec5ed0c508666ba542cb55aa72492",
+  "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088646636",
   "installer_result": "cancelled",
   "jobs": [
     {
       "name": "package-windows",
       "status": "completed",
       "conclusion": "cancelled",
-      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088640471/job/114320333457",
+      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088646636/job/114320422079",
       "failed_steps": []
     },
     {
       "name": "report",
       "status": "in_progress",
       "conclusion": null,
-      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088640471/job/114320338355",
+      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38088646636/job/114320789000",
       "failed_steps": []
     }
   ],
-  "generated_at": "2026-10-10T21:42:47.765Z"
+  "generated_at": "2026-10-10T21:44:55.711Z"
 }
