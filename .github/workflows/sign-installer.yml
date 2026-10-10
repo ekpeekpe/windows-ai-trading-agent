@@ -1,0 +1,86 @@
+name: Sign verified Windows installer (requires approved publisher identity)
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful unsigned NSIS workflow run ID
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+jobs:
+  sign:
+    runs-on: windows-latest
+    environment: production-signing
+    timeout-minutes: 25
+    steps:
+      - name: Verify publisher credentials are configured
+        shell: pwsh
+        env:
+          SIGN_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          SIGN_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          SIGN_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          foreach ($key in 'SIGN_ENDPOINT','SIGN_ACCOUNT','SIGN_PROFILE','AZURE_CLIENT_ID','AZURE_TENANT_ID','AZURE_SUBSCRIPTION_ID') {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($key))) {
+              throw ('Publisher is not enrolled for Artifact Signing: ' + $key + ' is missing')
+            }
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-ai-trading-agent-nsis-unsigned
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/unsigned
+      - name: Confirm input is unsigned and source artifact exists
+        shell: pwsh
+        run: |
+          $found = @(Get-ChildItem "$env:RUNNER_TEMP/unsigned" -Recurse -Filter '*setup.exe')
+          if ($found.Count -ne 1) { throw 'Expected exactly one installer input' }
+          $sig = Get-AuthenticodeSignature $found[0].FullName
+          if ($sig.Status -ne 'NotSigned') { throw 'Expected unsigned candidate; cannot re-sign a pre-signed artifact without review' }
+          Get-FileHash $found[0].FullName -Algorithm SHA256 | Format-List
+      - name: Azure login (OIDC, no private key in repository)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Sign installer with validated publisher certificate
+        uses: azure/artifact-signing-action@v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+          files-folder: ${{ runner.temp }}/unsigned
+          files-folder-filter: exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+      - name: Validate publisher identity, signature, and signed checksum
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER: ${{ vars.ARTIFACT_SIGNING_PUBLISHER }}
+        run: |
+          $files = @(Get-ChildItem "$env:RUNNER_TEMP/unsigned" -Filter '*setup.exe')
+          if ($files.Count -ne 1) { throw 'Signed installer missing' }
+          $sig = Get-AuthenticodeSignature $files[0].FullName
+          if ($sig.Status -ne 'Valid' -or -not $sig.SignerCertificate) { throw 'Installer signature verification FAILED' }
+          if ([string]::IsNullOrWhiteSpace($env:EXPECTED_PUBLISHER)) { throw 'Expected publisher subject not configured' }
+          if (-not $sig.SignerCertificate.Subject.Contains($env:EXPECTED_PUBLISHER)) {
+            throw 'Signer does not match the approved publisher identity'
+          }
+          Write-Host ('SIGNED and verified publisher: ' + $sig.SignerCertificate.Subject)
+          Get-FileHash $files[0].FullName -Algorithm SHA256 | Format-List
+      - name: Upload separately labelled signed installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ai-trading-agent-nsis-signed
+          path: ${{ runner.temp }}/unsigned/*setup.exe
+          retention-days: 30
+          if-no-files-found: error
