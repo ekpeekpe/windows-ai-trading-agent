@@ -58,7 +58,11 @@ class ChatGPTOSS:
         return None
     def _close(self):
         server,self.listener=self.listener,None
-        if server: threading.Thread(target=server.shutdown,daemon=True).start()
+        if server:
+            def finish():
+                server.shutdown()
+                server.server_close()
+            threading.Thread(target=finish,daemon=True).start()
 
     def status(self):
         with self.lock:
