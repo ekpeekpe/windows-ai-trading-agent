@@ -115,3 +115,21 @@ def transcription(audio: UploadFile = File(...)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Speech provider failed: {type(exc).__name__}") from exc
+
+from .chart_ipc import ChartIPC, ChartControlError, default_common_files
+
+class ChartRequest(BaseModel):
+    operation: str = Field(pattern="^(OPEN|SMA|EMA)$")
+    symbol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,32}$")
+    timeframe: str = Field(pattern="^(M1|M5|M15|M30|H1|H4|D1)$")
+    period: int = Field(default=20, ge=2, le=500)
+
+@app.post("/chart", dependencies=[Depends(authorized)])
+def chart(request: ChartRequest):
+    if os.getenv("ENABLE_CHART_CONTROL") != "1":
+        raise HTTPException(status_code=403, detail="Chart control disabled until companion is installed and verified")
+    try:
+        return ChartIPC(default_common_files()).execute(request.operation, request.symbol,
+                                                        request.timeframe, request.period)
+    except (ChartControlError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
