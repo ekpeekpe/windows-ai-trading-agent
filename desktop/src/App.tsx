@@ -20,6 +20,7 @@ export default function App() {
   const [model,setModel] = useState('');
   const [modelChoices,setModelChoices] = useState<Record<Provider,ModelChoice[]>>({chatgpt:[],openai:[],anthropic:[],gemini:[]});
   const [browserChoice,setBrowserChoice] = useState<'default'|'edge'|'chrome'>('default');
+  const activeAccountRef=useRef<string|null>(null);
   const [message,setMessage] = useState('');
   const [lines,setLines] = useState<Line[]>([]);
   const [status,setStatus] = useState('Starting AI services…');
@@ -77,8 +78,24 @@ export default function App() {
     try{
       const result=await api('/chatgpt/status');
       setChatgptState(result);setConnected(x=>({...x,chatgpt:result.connected}));
+      if(result.available===false){
+        setConnectionResult(result.error||'Windows protected credentials are unavailable.');
+      }
+      const activeKey=result.active_account_key||null;
+      if(activeKey!==activeAccountRef.current){
+        activeAccountRef.current=activeKey;
+        setModelChoices(x=>({...x,chatgpt:[]}));
+        if(provider==='chatgpt')setModel('');
+        if(activeKey&&result.usage_enabled)void loadChatGPTModels();
+      }
       return result;
-    }catch(e){setConnectionResult('ChatGPT status unavailable: '+explain(e));return null;}
+    }catch(e){
+      const error=explain(e);
+      setChatgptState({available:false,connected:false,usage_enabled:false,state:'backend_error',
+        error:'ChatGPT status check failed: '+error});
+      setConnectionResult('ChatGPT status check failed: '+error);
+      return null;
+    }
   }
   async function startChatGPT(account_key?:string){
     setConnectionResult('Opening the system browser for ChatGPT authorization…');
