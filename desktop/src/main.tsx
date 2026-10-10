@@ -80,9 +80,25 @@ function App() {
     } catch (e) { setConnectionResult('Connection centre unavailable: ' + String(e)); }
   }
   useEffect(() => {
-    api('/health').then(() => setStatus('Backend ready — trading disabled'))
-      .catch(() => setStatus('Backend unavailable. Restart application or inspect installation.'));
-    if (nativeDesktop) void refreshConnections();
+    let cancelled = false;
+    async function waitForBackend() {
+      for (let attempt=0; attempt<20 && !cancelled; attempt++) {
+        try {
+          await api('/health');
+          if (!cancelled) {
+            setStatus('Backend ready — trading disabled');
+            if (nativeDesktop) void refreshConnections();
+          }
+          return;
+        } catch {
+          if (!cancelled) setStatus('Starting local backend…');
+          await new Promise(resolve=>setTimeout(resolve,500));
+        }
+      }
+      if (!cancelled) setStatus('Backend unavailable. Restart application or inspect installation.');
+    }
+    void waitForBackend();
+    return () => { cancelled = true; };
   }, []);
   async function credentialAction(action: 'save'|'test'|'remove') {
     setConnectionResult('Checking ' + provider + ' connection…');
