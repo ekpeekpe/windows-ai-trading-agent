@@ -115,7 +115,7 @@ test('ChatGPT OSS sign-in starts a local browser flow without API key', async ({
   await page.route('**/api/chatgpt/start', async route => {
     requested=true;
     expect(route.request().method()).toBe('POST');
-    expect(route.request().postDataJSON()).toEqual({account_key:null});
+    expect(route.request().postDataJSON()).toEqual({account_key:null,launch_browser:true});
     await route.fulfill({status:200,contentType:'application/json',
       body:JSON.stringify({state:'waiting_for_browser',expires_in:300})});
   });
