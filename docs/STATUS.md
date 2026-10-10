@@ -37,3 +37,15 @@ Requires Windows 10/11, 64-bit Python 3.12, Node.js 22, installed and logged-in 
 ## Security
 
 The HTTP backend is loopback-only; development credentials are process environment variables, not yet an OS credential store. Never expose its port, commit tokens, or interpret fabricated test data as actual MT5 results. Approval is only a proposal acknowledgement; trade execution is disabled. Frontend cancellation cannot guarantee a synchronous provider request is terminated on the server. Tauri bundling/sidecar integration is not finished.
+
+## Continuation 4 — Windows installer candidate (2026-10-10)
+
+**No installable .exe has been verified or linked yet.** The GitHub `windows-installer.yml` build definition has been committed, but the connected GitHub status interface did not return a completed push-build or downloadable installer artifact. Rust, the Windows MetaTrader5 wheel and frontend dependencies are unavailable to the Linux container, so local NSIS compilation and Windows installation are **BLOCKED**.
+
+**PASS (executed portable Python only):** `PYTHONPATH=. pytest -q` in the available project snapshot returned **54 passed, 2 skipped**, including mocked provider credential lifecycle, mocked full HTTP chat/MT5 tool calls, terminal discovery against fake paths, and one **real local Python subprocess HTTP startup/shutdown** test. Python source and Tauri JSON/Cargo manifest parsing were also checked. The two skipped cases require real MT5 and AI provider credentials.
+
+**NOT TESTED:** Tauri Rust compilation, PyInstaller Windows sidecar, React production build, NSIS output, installer preflight/progress, installation/upgrade/uninstall, live OpenAI/Anthropic/Gemini, actual MT5, real charts, voice hardware, application credential storage on Windows. The prior Linux frontend attempt failed because npm dependencies were unavailable; this is **BLOCKED**, not a passing build.
+
+**Implemented source (unverified on Windows):** Tauri Rust bridge launches a frozen Python sidecar and keeps a random local HTTP token in Rust; only permitted endpoints can be invoked by React. Python Windows Credential Manager interface stores provider keys; connection tests call official SDK model listing. First-run UI offers API key save/test/remove and optional terminal discovery, and labels ChatGPT/Claude account authorization unimplemented. CI attempts the PyInstaller/Tauri NSIS build and uploads only a successful .exe. This is not evidence the resulting binary works.
+
+**Remaining work:** Inspect GitHub Actions output; fix any Windows compile/freezing defects; run unsigned setup in an isolated Windows 10/11 test environment; verify WebView2, sidecar auto-start, provider key persistence and real provider call; perform genuine terminal discovery and fresh EURUSD quote; test WebView2 microphone and speaker; implement the custom install-plan/progress wizard. Trading remains disabled. See [INSTALLER.md](INSTALLER.md) and [PROVIDER_AUTH.md](PROVIDER_AUTH.md).
