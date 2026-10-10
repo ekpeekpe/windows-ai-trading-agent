@@ -9,6 +9,7 @@ type ChatLine = { role: string; text: string };
 function App() {
   const [localToken, setLocalToken] = useState('');
   const [model, setModel] = useState('gpt-4.1-mini');
+  const [provider, setProvider] = useState('openai');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('Backend not checked');
   const [terminal, setTerminal] = useState('Not connected');
@@ -70,7 +71,7 @@ function App() {
     setLines(x => [...x, { role: 'You', text: prompt }]);
     setStatus('Requesting AI response');
     try {
-      const response = await api('/chat', { method: 'POST', body: JSON.stringify({ message: prompt, model }) });
+      const response = await api('/chat', { method: 'POST', body: JSON.stringify({ message: prompt, model, provider }) });
       setLines(x => [...x, { role: 'Assistant', text: response.answer }]);
       setStatus('Response received');
       if (speakReplies) say(response.answer);
@@ -128,7 +129,7 @@ function App() {
     <button type="button" onClick={checkTerminal}>Check MT5 terminal</button>
     <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}} aria-label="Actual MT5 terminal status">{terminal}</pre>
     <form onSubmit={send}>
-      <p><label>AI provider <select aria-label="AI provider"><option>OpenAI</option></select></label> <label>Model <input value={model} onChange={e=>setModel(e.target.value)} /></label></p>
+      <p><label>AI provider <select aria-label="AI provider" value={provider} onChange={e=>{const p=e.target.value;setProvider(p);setModel(p==='openai'?'gpt-4.1-mini':p==='anthropic'?'claude-sonnet-5':'gemini-2.5-flash');}}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label> <label>Model <input value={model} onChange={e=>setModel(e.target.value)} /></label></p>
       <label htmlFor="instruction">Natural-language instruction</label>
       <textarea id="instruction" rows={3} style={{width:'100%'}} value={message} onChange={e=>setMessage(e.target.value)} required />
       <p><button type="submit" disabled={busy}>Send</button> <button type="button" onClick={microphone}>{recording ? 'Stop recording' : 'Push to talk'}</button> <button type="button" onClick={stop}>Stop/Cancel</button></p>
