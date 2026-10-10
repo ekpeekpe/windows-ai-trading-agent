@@ -69,7 +69,8 @@ class ChatGPTOSS:
             try:
                 active=self._active()
                 accounts=[{"key":r["key"],"email":r.get("email"),"client_id":r["client_id"],
-                           "connected":bool(self._get("tokens:"+r["key"]))} for r in self._registrations()]
+                           "connected":bool(self._get("tokens:"+r["key"])),
+                           "active":bool(active and active["key"]==r["key"])} for r in self._registrations()]
             except Exception as exc:
                 # In a frozen Windows app, unavailable WinVault backends and
                 # credential decoding errors must not return an opaque HTTP 500.
@@ -85,6 +86,7 @@ class ChatGPTOSS:
                     "usage_enabled":bool(active and "chatgpt.tokens.use.direct" in active.get("scopes",[])),
                     "state":"waiting_for_browser" if self.pending else "connected" if active else "disconnected",
                     "email":active.get("email") if active else None,
+                    "active_account_key":active["key"] if active else None,
                     "accounts":accounts,"error":self.error}
 
     def start(self, account_key=None, *, launch_browser=True):
