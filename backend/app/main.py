@@ -54,7 +54,8 @@ def unpack(p: ProposalRequest) -> TradeProposal:
 
 @app.get("/health")
 def health():
-    return {"ok": True, "mode": "read_only", "trading_enabled": False,
+    return {"ok": True, "mode": "trade_disabled", "trading_enabled": False,
+            "chart_control_enabled": os.getenv("ENABLE_CHART_CONTROL") == "1",
             "authentication_required": True}
 
 @app.get("/terminal", dependencies=[Depends(authorized)])
