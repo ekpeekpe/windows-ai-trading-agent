@@ -15,7 +15,7 @@ from .chatgpt_auth import chatgpt, ChatGPTAuthError
 from .chatgpt_agent import ChatGPTAgent, ChatGPTInferenceError
 from .credentials import get_key, set_key, delete_key, connection_status, check_connection, CredentialUnavailable, validate_provider
 
-app = FastAPI(title="Windows AI Trading Agent", version="0.3.1")
+app = FastAPI(title="Windows AI Trading Agent", version="0.3.2")
 mt5 = MT5ReadOnly(os.getenv("MT5_TERMINAL_PATH") or None,
                   int(os.environ["MT5_EXPECTED_LOGIN"]) if os.getenv("MT5_EXPECTED_LOGIN") else None)
 proposals = ProposalStore(audit=record)
