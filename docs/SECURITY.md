@@ -1,9 +1,11 @@
-# Security controls and limitations
+# Local security, privacy and trading-safety boundaries
 
-Never commit API keys, terminal credentials, or account passwords. Use environment-based API key injection only for local development; OS-protected key storage is not implemented yet. Do not send backend error traces or secrets to an AI provider. Read-only commands require explicit schemas and are not allowed arbitrary code execution.
+The backend must be started with `--host 127.0.0.1` only. Every account, quote, chat, audio, chart and proposal endpoint requires a matching `x-agent-token` header and `AGENT_LOCAL_TOKEN` of at least 24 characters; only health is unauthenticated. Do not expose port 8765 via a proxy, tunnel, firewall opening or LAN. Token entry remains in the frontend's volatile React state.
 
-The HTTP development backend has **no authentication** and must listen on 127.0.0.1 only. Avoid browser tabs from unknown websites while running the backend; the security hardening work is not complete. Do not open the port to the LAN or Internet.
+Provider API keys remain in the Python backend's process environment: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`. The required Windows Credential Manager integration is not yet implemented. Do not put keys in the frontend, Git, logs, screenshots or ordinary configuration files; rotate leaked keys with the providers. Prompt/tool data goes to the selected reasoning provider. Only user-initiated microphone recordings go to OpenAI for transcription, which can have API costs. Spoken output relies on the OS/browser synthesis feature.
 
-Trading is disabled independently of any AI instructions: there is no order submission handler. Proposal approval produces `approved_not_executed`, never a broker request. There is no risk-management enforcement suitable for real-money orders.
+The agent can call only validated registered tools. An explicitly enabled chart IPC supports limited reversible chart changes. The MQL5 EA cannot trade and does not accept arbitrary file names, scripts, Python or shell commands. The fixed file-based IPC is **not cryptographically authenticated against other local same-user processes**, so it must never be extended to financial execution without a new independent safety review.
 
-Clear ephemeral proposal state by stopping the backend. Conversation history lives only in the active frontend state. Audit logs, encrypted credential storage, production IPC authorization and an emergency trading switch are not yet built.
+`/proposals` is a **non-executable draft**, not broker-validation. The UI's acknowledgement never sends an order. Account switching, broker margin/risk constraints, durable user approvals and execution reconciliation are not ready for trades. The backend provides no order-submission endpoint. A local audit JSONL stores timestamp/event/proposal ID without payloads, prompts, API keys or account passwords.
+
+The browser Stop button cancels the frontend request, **not necessarily the running backend/provider call**. The current Tauri 2 skeleton is development-only and does not package/manage/authenticate the backend sidecar or a signed installer. Production Windows deployment needs stricter origin/IPC protections, protected key storage, crash recovery and a complete risk engine before trading can be enabled.
