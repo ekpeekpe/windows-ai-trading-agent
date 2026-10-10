@@ -34,6 +34,34 @@ jobs:
           --hidden-import app.main --hidden-import uvicorn.logging
           --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto
           launcher.py
+      - name: Smoke-test frozen Windows Python backend over authenticated HTTP
+        shell: pwsh
+        run: |
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+          $listener.Start()
+          $port = $listener.LocalEndpoint.Port
+          $listener.Stop()
+          $env:AGENT_PORT = [string]$port
+          $env:AGENT_LOCAL_TOKEN = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+          $exe = (Resolve-Path 'backend/dist/agent-backend.exe').Path
+          $child = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($attempt = 0; $attempt -lt 120; $attempt++) {
+              if ($child.HasExited) { throw ('Frozen backend exited unexpectedly: ' + $child.ExitCode) }
+              Start-Sleep -Milliseconds 500
+              try {
+                $url = 'http://127.0.0.1:' + $port + '/providers'
+                $response = Invoke-RestMethod -Uri $url -TimeoutSec 2 -Headers @{'x-agent-token' = $env:AGENT_LOCAL_TOKEN}
+                if ($response.providers.Count -ge 3) { $ready = $true; break }
+              } catch { }
+            }
+            if (-not $ready) { throw 'Frozen backend failed authenticated readiness after 60 seconds' }
+            Write-Host 'PASS: PyInstaller backend starts, responds to authenticated request and remains read-only'
+          } finally {
+            if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force }
+            Remove-Item Env:AGENT_PORT,Env:AGENT_LOCAL_TOKEN -ErrorAction SilentlyContinue
+          }
       - name: Stage platform-qualified sidecar and placeholder app icon
         shell: pwsh
         run: |
