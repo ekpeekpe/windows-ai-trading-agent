@@ -12,3 +12,12 @@ target/
 .idea/
 .vscode/
 .DS_Store
+
+# Generated Windows installer / PyInstaller build artifacts
+*.spec
+*.exe
+*.msi
+desktop/src-tauri/binaries/
+desktop/src-tauri/icons/
+desktop/tsconfig.tsbuildinfo
+build/
