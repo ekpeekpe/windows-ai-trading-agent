@@ -30,7 +30,7 @@ jobs:
           --name agent-backend --paths .
           --collect-all keyring --collect-all MetaTrader5
           --collect-submodules openai --collect-submodules anthropic
-          --collect-submodules google.genai
+          --collect-submodules google.genai --collect-all jwt --collect-all cryptography
           --exclude-module google.genai.tests --exclude-module pytest
           --hidden-import app.main --hidden-import uvicorn.logging
           --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto
