@@ -55,13 +55,44 @@ test('model/provider connection dialog can be opened and closed by keyboard', as
   await expect(dialog).not.toBeVisible();
 });
 
-test('chat submission shows a labelled simulated result and new chat clears it', async ({page}) => {
-  await page.getByRole('textbox', {name:'Message to AI Trading Agent'}).fill('Explain the available tools');
-  await page.getByRole('button', {name:'Send message'}).click();
+test('a chat cannot be submitted without a selected provider model', async ({page}) => {
+  const input=page.getByRole('textbox',{name:'Message to AI Trading Agent'});
+  await input.fill('Explain the available tools');
+  await page.getByRole('button',{name:'Send message'}).click();
+  const dialog=page.getByRole('dialog',{name:'AI connections'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel('Model')).toBeDisabled();
+  await expect(dialog.getByRole('textbox',{name:'ChatGPT model identifier'})).toHaveCount(0);
+});
+
+test('model choices load from provider catalog and stay read-only',async ({page})=>{
+  await page.route('**/api/chatgpt/status',async route=>{
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({
+      available:true,connected:true,usage_enabled:true,state:'connected',
+      email:'test@example.invalid',active_account_key:'mock',accounts:[]
+    })});
+  });
+  await page.route('**/api/chatgpt/models',async route=>{
+    await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({models:[
+      {slug:'test-older-model',display_name:'Older mock model'},
+      {slug:'test-newer-model',display_name:'Newer mock model'}
+    ]})});
+  });
+  await page.getByRole('button', {name:'AI Provider'}).click();
+  await page.getByRole('menuitem',{name:'Connections and API keys'}).click();
+  const dlg=page.getByRole('dialog',{name:'AI connections'});
+  await dlg.getByRole('button',{name:'Refresh status'}).click();
+  await dlg.getByRole('button',{name:'Refresh models'}).click();
+  const options=dlg.getByLabel('Model');
+  await expect(options).toBeEnabled();
+  await expect(options.locator('option')).toHaveCount(3);
+  await options.selectOption('test-newer-model');
+  await expect(options).toHaveValue('test-newer-model');
+  await page.screenshot({path:'test-results/provider-model-dropdown.png',fullPage:false});
+  await page.keyboard.press('Escape');
+  await page.getByRole('textbox',{name:'Message to AI Trading Agent'}).fill('Explain the available tools');
+  await page.getByRole('button',{name:'Send message'}).click();
   await expect(page.getByText('Browser test response from a simulated provider — not live.')).toBeVisible();
-  await page.screenshot({path:'test-results/populated-chat.png',fullPage:false});
-  await page.getByRole('button', {name:'New conversation'}).click();
-  await expect(page.getByRole('heading', {name:'What would you like to do?'})).toBeVisible();
 });
 
 test('MT5 discovery accurately reports missing installation', async ({page}) => {
@@ -91,9 +122,25 @@ test('ChatGPT OSS sign-in starts a local browser flow without API key', async ({
   await page.getByRole('button',{name:'AI Provider'}).click();
   await page.getByRole('menuitem',{name:'Connections and API keys'}).click();
   const dlg=page.getByRole('dialog',{name:'AI connections'});
-  await expect(dlg.getByText('Official open-source ChatGPT sign-in')).toBeVisible();
+  await expect(dlg.getByLabel('Sign-in browser')).toBeVisible();
   await expect(dlg.getByText('API key',{exact:true})).toHaveCount(0);
   await dlg.getByRole('button',{name:'Continue with ChatGPT'}).click();
   await expect(dlg.getByText(/Complete authorization in your browser/)).toBeVisible();
   expect(requested).toBe(true);
+});
+
+test('provider window has a Windows-style rail and no inner scrollbar',async({page})=>{
+  await page.getByRole('button',{name:'AI Provider'}).click();
+  await page.getByRole('menuitem',{name:'Connections and API keys'}).click();
+  const shape=await page.evaluate(()=>{
+    const d=document.querySelector('.provider-dialog');
+    const body=d?.querySelector('.dialog-body');
+    return {rail:!!d?.querySelector('.connection-rail'),
+      bodyScrollHeight:body?.scrollHeight||0,bodyClientHeight:body?.clientHeight||0,
+      cssOverflow:body?getComputedStyle(body).overflowY:'unknown'};
+  });
+  expect(shape.rail).toBeTruthy();
+  expect(shape.cssOverflow).toBe('hidden');
+  expect(shape.bodyScrollHeight).toBeLessThanOrEqual(shape.bodyClientHeight+2);
+  await page.screenshot({path:'test-results/windows-provider-dialog.png',fullPage:false});
 });
