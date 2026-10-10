@@ -218,6 +218,9 @@ def terminals_select(request: TerminalSelection):
 # separate random loopback port, never the authenticated application HTTP port.
 class ChatGPTStartRequest(BaseModel):
     account_key: str | None = Field(default=None, max_length=100)
+    # Native Tauri shell opens the browser itself. The OAuth URL must never be
+    # forwarded into the renderer in packaged Windows builds.
+    launch_browser: bool = True
 
 class ChatGPTTestRequest(BaseModel):
     model: str = Field(min_length=1, max_length=100)
@@ -229,9 +232,13 @@ def chatgpt_status():
 @app.post("/chatgpt/start", dependencies=[Depends(authorized)])
 def chatgpt_start(request: ChatGPTStartRequest):
     try:
-        return chatgpt.start(request.account_key)
+        return chatgpt.start(request.account_key, launch_browser=request.launch_browser)
     except (CredentialUnavailable, ChatGPTAuthError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+@app.post("/chatgpt/cancel", dependencies=[Depends(authorized)])
+def chatgpt_cancel():
+    return chatgpt.cancel()
 
 @app.get("/chatgpt/models", dependencies=[Depends(authorized)])
 def chatgpt_models():
