@@ -25,7 +25,7 @@ fn valid_part(value: &str) -> bool {
 fn allowed(method: &str, path: &str) -> bool {
     match (method, path) {
         ("GET", "/health" | "/terminal" | "/providers" | "/terminals" | "/chatgpt/status" | "/chatgpt/models") => true,
-        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/start" | "/chatgpt/test" | "/chatgpt/signout" | "/chatgpt/cancel" | "/chatgpt/select") => true,
+        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/test" | "/chatgpt/signout" | "/chatgpt/cancel" | "/chatgpt/select") => true,
         _ => {
             let parts: Vec<&str> = path.split('/').collect();
             match (method, parts.as_slice()) {
@@ -221,7 +221,7 @@ mod tests {
     #[test] fn deny_unsafe_paths() {
         assert!(allowed("GET", "/health"));
         assert!(allowed("POST", "/providers/openai/test"));
-        assert!(allowed("POST", "/chatgpt/start"));
+        assert!(!allowed("POST", "/chatgpt/start")); // authorization URL is native-only
         assert!(allowed("POST", "/chatgpt/cancel"));
         assert!(super::find_browser("default").unwrap().is_none());
         assert!(super::find_browser("untrusted-browser").is_err());
