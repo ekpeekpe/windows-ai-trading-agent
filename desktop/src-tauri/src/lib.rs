@@ -36,6 +36,8 @@ fn allowed(method: &str, path: &str) -> bool {
                     matches!(*provider, "openai" | "anthropic" | "gemini"),
                 ("POST", ["", "providers", provider, "test"]) =>
                     matches!(*provider, "openai" | "anthropic" | "gemini"),
+                ("GET", ["", "providers", provider, "models"]) =>
+                    matches!(*provider, "openai" | "anthropic" | "gemini"),
                 _ => false,
             }
         }
