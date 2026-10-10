@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from .mt5 import MT5ReadOnly, MT5Unavailable
 from .agent import OpenAIAgent, AgentCancelled, ProviderProtocolError
+from .providers import AnthropicAgent, GeminiAgent
 from .safety import TradeProposal, ProposalStore
 from .audit import record
 from .tools import ToolRegistry
@@ -28,6 +29,7 @@ def authorized(request: Request):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=3000)
     model: str = Field(min_length=1, max_length=100)
+    provider: str = Field(default="openai", pattern="^(openai|anthropic|gemini)$")
 
 class ProposalRequest(BaseModel):
     account: int
@@ -76,10 +78,13 @@ def quote(symbol: str):
 
 @app.post("/chat", dependencies=[Depends(authorized)])
 def chat(request: ChatRequest):
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
+    keys = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
+    if not os.getenv(keys[request.provider]):
+        raise HTTPException(status_code=503, detail=f"{keys[request.provider]} is not configured")
     try:
-        return {"answer": OpenAIAgent(tools=ToolRegistry(mt5=mt5, chart_ipc=(ChartIPC(default_common_files()) if os.getenv("ENABLE_CHART_CONTROL") == "1" else None))).ask(request.message, request.model) }
+        registry = ToolRegistry(mt5=mt5, chart_ipc=(ChartIPC(default_common_files()) if os.getenv("ENABLE_CHART_CONTROL") == "1" else None))
+        provider_type = {"openai": OpenAIAgent, "anthropic": AnthropicAgent, "gemini": GeminiAgent}[request.provider]
+        return {"answer": provider_type(tools=registry).ask(request.message, request.model)}
     except AgentCancelled as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ProviderProtocolError as exc:
