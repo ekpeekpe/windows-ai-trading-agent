@@ -6,7 +6,7 @@ import base64, hashlib, hmac, json, secrets, threading, time, uuid, webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
-from .credentials import vault, SERVICE, CredentialUnavailable
+from .credentials import protected_chatgpt_vault, SERVICE, CredentialUnavailable
 
 AUTH="https://auth.openai.com/api/accounts/authorize"
 TOKEN="https://auth.openai.com/api/accounts/oauth/token"
@@ -29,7 +29,7 @@ def verify_id_token(token, client_id, nonce):
 
 class ChatGPTOSS:
     def __init__(self, *, store=None, client=None, browser=None, verifier=None):
-        self.store=store or vault
+        self.store=store or protected_chatgpt_vault
         self.client=client or httpx.Client
         self.browser=browser or webbrowser.open
         self.verifier=verifier or verify_id_token
