@@ -26,3 +26,20 @@ def test_real_windows_chatgpt_status_without_credentials():
     assert status["available"],status.get("error","Windows protected storage unavailable")
     assert status["state"] in ("disconnected","connected")
     assert isinstance(status["accounts"],list)
+
+
+@pytest.mark.skipif(os.name!="nt",reason="Requires real Windows Credential Manager")
+def test_real_windows_large_oauth_session_storage():
+    from app.credentials import protected_chatgpt_vault, SERVICE
+    key="oauth-long-ci-probe-"+uuid.uuid4().hex
+    value="test-only-large-token-"+uuid.uuid4().hex*300
+    store=protected_chatgpt_vault()
+    service=SERVICE+".chatgpt-oss.test"
+    try:
+        store.set_password(service,key,value)
+        assert store.get_password(service,key)==value
+        store.set_password(service,key,value[::-1])
+        assert store.get_password(service,key)==value[::-1]
+    finally:
+        store.delete_password(service,key)
+        assert store.get_password(service,key) is None
