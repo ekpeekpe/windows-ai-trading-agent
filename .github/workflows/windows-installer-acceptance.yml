@@ -1,0 +1,121 @@
+name: Windows installer install-and-launch acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/windows-installer-acceptance.yml
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful Windows NSIS workflow run ID
+        required: true
+        default: '38072956116'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  install-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-ai-trading-agent-nsis-unsigned
+          run-id: ${{ inputs.source_run_id || '38072956116' }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/installer
+      - name: Install and launch actual NSIS application (no MT5 or API credentials)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem "$env:RUNNER_TEMP/installer" -Filter '*setup.exe' -Recurse | Select-Object -First 1
+          if (-not $installer) { throw 'Downloaded artifact contains no setup.exe' }
+          if ([string]::IsNullOrWhiteSpace($installer.FullName)) { throw 'Invalid installer path' }
+          $disk = Get-PSDrive -Name $env:SystemDrive.TrimEnd(':')
+          if ($disk.Free -lt ($installer.Length * 3 + 250MB)) { throw 'Insufficient disk space for installation test' }
+          Write-Host ('Installer found: ' + $installer.Name + '; unsigned pilot, size: ' + $installer.Length)
+          $setup = Start-Process -FilePath $installer.FullName -ArgumentList '/S' -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { throw ('NSIS install failed with code ' + $setup.ExitCode) }
+          $candidates = @(
+            (Join-Path $env:LOCALAPPDATA 'Windows AI Trading Agent'),
+            (Join-Path $env:LOCALAPPDATA 'Programs/Windows AI Trading Agent')
+          )
+          $app = $null
+          foreach ($candidate in $candidates) {
+            if (Test-Path $candidate) {
+              $app = Get-ChildItem $candidate -Recurse -Filter 'windows-ai-trading-agent.exe' -File | Select-Object -First 1
+              if ($app) { break }
+            }
+          }
+          if (-not $app) {
+            $app = Get-ChildItem $env:LOCALAPPDATA -Recurse -Filter 'windows-ai-trading-agent.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          }
+          if (-not $app) { throw 'NSIS returned success but desktop executable could not be located' }
+          Write-Host ('Installed desktop executable: ' + $app.FullName)
+          $gui = Start-Process -FilePath $app.FullName -PassThru
+          $ready = $false
+          try {
+            for ($attempt = 0; $attempt -lt 90; $attempt++) {
+              if ($gui.HasExited) { throw ('Installed desktop app exited early: ' + $gui.ExitCode) }
+              Start-Sleep -Milliseconds 500
+              $backends = @(Get-Process -Name 'agent-backend' -ErrorAction SilentlyContinue)
+              if (-not $backends.Count) { continue }
+              $ids = @($backends | ForEach-Object { $_.Id })
+              $ports = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {
+                ($ids -contains $_.OwningProcess) -and ($_.LocalAddress -eq '127.0.0.1')
+              } | Select-Object -ExpandProperty LocalPort -Unique)
+              foreach ($port in $ports) {
+                try {
+                  $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/health" -TimeoutSec 2
+                  if ($health.ok -eq $true -and $health.trading_enabled -eq $false) {
+                    $ready = $true
+                    break
+                  }
+                } catch { }
+              }
+              if ($ready) { break }
+            }
+            if (-not $ready) { throw 'Installed desktop app launched but bundled backend did not become ready' }
+            Write-Host 'PASS: NSIS installed application launches and its bundled read-only Python backend answers HTTP'
+          } finally {
+            if (-not $gui.HasExited) {
+              if ($gui.CloseMainWindow()) { $null = $gui.WaitForExit(15000) }
+              if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
+            }
+          }
+  report:
+    if: always()
+    needs: install-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run_id = context.runId;
+            const response = await github.rest.actions.listJobsForWorkflowRun({owner,repo,run_id,per_page:100});
+            const report = {
+              run_id, sha:context.sha,
+              url:`https://github.com/${owner}/${repo}/actions/runs/${run_id}`,
+              result:'${{ needs.install-test.result }}',
+              jobs:response.data.jobs.map(j=>({
+                name:j.name, status:j.status,conclusion:j.conclusion,
+                failed_steps:(j.steps||[]).filter(s=>s.conclusion==='failure').map(s=>s.name)
+              })),
+              generated_at:new Date().toISOString()
+            };
+            const path = 'acceptance-latest.json';
+            let sha;
+            try {
+              const current=await github.rest.repos.getContent({owner,repo,path,ref:'installer-build-reports'});
+              sha=current.data.sha;
+            } catch(error) { if(error.status!==404) throw error; }
+            await github.rest.repos.createOrUpdateFileContents({
+              owner,repo,path,branch:'installer-build-reports',
+              message:`CI: record installer acceptance run ${run_id}`,
+              content:Buffer.from(JSON.stringify(report,null,2)+'\n').toString('base64'),
+              ...(sha?{sha}:{})
+            });
