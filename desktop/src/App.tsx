@@ -3,21 +3,21 @@ import { invoke } from '@tauri-apps/api/core';
 import './app.css';
 
 const native = '__TAURI_INTERNALS__' in window;
-type Provider = 'openai' | 'anthropic' | 'gemini';
+type Provider = 'chatgpt' | 'openai' | 'anthropic' | 'gemini';
 type Dialog = 'provider' | 'terminal' | 'market' | 'proposal' | 'settings' | 'diagnostics' | 'about' | null;
 type Line = { role: 'You' | 'Assistant' | 'Error'; text: string };
 type Proposal = {account: number; symbol: string; side: string; volume: string; stop_loss?: string | null; take_profit?: string | null};
 type Pending = {id: string; proposal: Proposal};
-const modelDefaults: Record<Provider,string> = {openai:'gpt-4.1-mini',anthropic:'claude-sonnet-4-5',gemini:'gemini-2.5-flash'};
-const names: Record<Provider,string> = {openai:'OpenAI',anthropic:'Anthropic',gemini:'Google Gemini'};
-const choices: Provider[] = ['openai','anthropic','gemini'];
+const modelDefaults: Record<Provider,string> = {chatgpt:'gpt-6.1-sol',openai:'gpt-4.1-mini',anthropic:'claude-sonnet-4-5',gemini:'gemini-2.5-flash'};
+const names: Record<Provider,string> = {chatgpt:'ChatGPT plan (Codex)',openai:'OpenAI API',anthropic:'Anthropic API',gemini:'Google Gemini'};
+const choices: Provider[] = ['chatgpt','openai','anthropic','gemini'];
 function explain(error: unknown) { return error instanceof Error ? error.message : String(error); }
 const now = () => new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 
 export default function App() {
   const [token,setToken] = useState('');
-  const [provider,setProvider] = useState<Provider>('openai');
-  const [model,setModel] = useState(modelDefaults.openai);
+  const [provider,setProvider] = useState<Provider>('chatgpt');
+  const [model,setModel] = useState(modelDefaults.chatgpt);
   const [message,setMessage] = useState('');
   const [lines,setLines] = useState<Line[]>([]);
   const [status,setStatus] = useState('Starting AI services…');
@@ -26,6 +26,9 @@ export default function App() {
   const [menu,setMenu] = useState<string|null>(null);
   const [key,setKey] = useState('');
   const [connectionResult,setConnectionResult] = useState('');
+  const [chatgptState,setChatgptState] = useState<{available:boolean;connected:boolean;usage_enabled:boolean;state:string;email?:string|null;error?:string|null;accounts?:{key:string;email?:string|null;connected:boolean}[]}|null>(null);
+  const [chatgptModels,setChatgptModels] = useState<{slug:string;display_name:string}[]>([]);
+  const [chosenAccount,setChosenAccount] = useState('');
   const [busy,setBusy] = useState(false);
   const [recording,setRecording] = useState(false);
   const [speak,setSpeak] = useState(true);
@@ -68,6 +71,52 @@ export default function App() {
       return data;
     } finally { if(stopRef.current===controller) stopRef.current=null; }
   }
+  async function refreshChatGPT(){
+    try{
+      const result=await api('/chatgpt/status');
+      setChatgptState(result);setConnected(x=>({...x,chatgpt:result.connected}));
+      return result;
+    }catch(e){setConnectionResult('ChatGPT status unavailable: '+explain(e));return null;}
+  }
+  async function startChatGPT(account_key?:string){
+    setConnectionResult('Opening the system browser for ChatGPT authorization…');
+    try{
+      await api('/chatgpt/start','POST',{account_key:account_key||null});
+      setConnectionResult('Complete authorization in your browser; return here when finished.');
+      await refreshChatGPT();
+    }catch(e){setConnectionResult('Sign-in could not start: '+explain(e));}
+  }
+  async function loadChatGPTModels(){
+    try{
+      const result=await api('/chatgpt/models');
+      setChatgptModels(result.models||[]);
+      const first=result.models?.[0]?.slug;
+      if(first && provider==='chatgpt')setModel(first);
+      setConnectionResult('Model catalog loaded. A model list does not establish plan entitlement.');
+    }catch(e){setConnectionResult('Model list unavailable: '+explain(e));}
+  }
+  async function testChatGPT(){
+    setConnectionResult('Running a real ChatGPT-plan inference test…');
+    try{
+      const result=await api('/chatgpt/test','POST',{model});
+      setConnectionResult(result.verified?'Completed inference: '+result.response:'Inference was not verified');
+    }catch(e){setConnectionResult('ChatGPT-plan test failed: '+explain(e));}
+  }
+  async function signOutChatGPT(){
+    try{
+      const result=await api('/chatgpt/signout','POST');
+      setConnectionResult(result.remote_revocation_confirmed?'Signed out and remote session revoked.':
+        'Signed out locally. Remote revocation could not be confirmed; review connected apps in ChatGPT Settings.');
+      setChatgptModels([]);await refreshChatGPT();
+    }catch(e){setConnectionResult('Sign-out failed: '+explain(e));}
+  }
+  useEffect(()=>{
+    if(dialog!=='provider'||provider!=='chatgpt')return;
+    let running=true;
+    const poll=()=>{if(running)void refreshChatGPT();};
+    poll();const timer=window.setInterval(poll,2200);
+    return()=>{running=false;window.clearInterval(timer);};
+  },[dialog,provider]);
   async function connections(){
     try {
       const result=await api('/providers');
@@ -84,6 +133,7 @@ export default function App() {
           setHealth(JSON.stringify(data,null,2));
           setStatus('Services ready · trading disabled');
           void connections();
+          void refreshChatGPT();
           return;
         } catch {
           if(active)setStatus('Starting AI services…');
@@ -120,7 +170,7 @@ export default function App() {
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
   },[dialog]);
-  function setChosenProvider(p:Provider){setProvider(p);setModel(modelDefaults[p]);setConnectionResult('');}
+  function setChosenProvider(p:Provider){setProvider(p);setModel(modelDefaults[p]);setConnectionResult('');if(p==='chatgpt')void refreshChatGPT();}
   function say(text:string){
     setLastSpoken(text);
     if('speechSynthesis' in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1;window.speechSynthesis.speak(u);}
@@ -299,20 +349,50 @@ export default function App() {
         }</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={()=>setDialog(null)}>✕</button></div>
         <div className="dialog-body">
           {dialog==='provider'&&<>
-            <p className="subtle">Provider API charges are separate from this application.</p>
+            <p className="subtle">ChatGPT-plan and separately billed provider API connections are independent.</p>
             <div className="provider-list" role="group" aria-label="AI provider">
               {choices.map(p=><button key={p} type="button" className={'provider-option '+(provider===p?'selected':'')}
-                onClick={()=>setChosenProvider(p)}><span>{names[p]}</span><span className="option-status">{connected[p]?'Key configured':'Not connected'}</span></button>)}
+                onClick={()=>setChosenProvider(p)}><span>{names[p]}</span><span className="option-status">{p==='chatgpt'?(chatgptState?.connected?'Signed in':'Not signed in'):(connected[p]?'Key configured':'Not connected')}</span></button>)}
             </div>
+            {provider==='chatgpt'?<>
+              <div className="info-note">
+                <strong>Official open-source ChatGPT sign-in</strong>
+                <p>Use an eligible ChatGPT plan. A separate OpenAI API key is not needed. OpenAI issues your client ID when you authorize the app in your system browser.</p>
+                <p role="status">Connection: {chatgptState?.connected?'Signed in as '+(chatgptState.email||'ChatGPT account'):
+                  chatgptState?.state==='waiting_for_browser'?'Waiting for browser consent':'Not signed in'}.
+                  {' '}Plan usage: {chatgptState?.usage_enabled?'Authorized':'Not verified'}.</p>
+              </div>
+              <div className="action-row">
+                <button className="primary" type="button" onClick={()=>void startChatGPT()}>Continue with ChatGPT</button>
+                <button type="button" onClick={()=>void refreshChatGPT()}>Refresh status</button>
+                <button type="button" disabled={!chatgptState?.connected} onClick={()=>void signOutChatGPT()}>Disconnect</button>
+              </div>
+              {(chatgptState?.accounts?.length||0)>0&&<label className="field">Previously registered account
+                <select value={chosenAccount} onChange={e=>setChosenAccount(e.target.value)}>
+                  <option value="">Choose a saved account</option>
+                  {chatgptState?.accounts?.map(a=><option key={a.key} value={a.key}>{a.email||a.key}{a.connected?' · Connected':''}</option>)}
+                </select>
+              </label>}
+              {chosenAccount&&<button type="button" onClick={()=>void startChatGPT(chosenAccount)}>Reauthorize selected account</button>}
+              <label className="field">Model
+                {chatgptModels.length>0?<select value={model} onChange={e=>setModel(e.target.value)}>
+                  {chatgptModels.map(m=><option key={m.slug} value={m.slug}>{m.display_name}</option>)}</select>:
+                  <input value={model} onChange={e=>setModel(e.target.value)} aria-label="ChatGPT model identifier"/>}
+              </label>
+              <div className="action-row">
+                <button type="button" disabled={!chatgptState?.usage_enabled} onClick={()=>void loadChatGPTModels()}>Load account models</button>
+                <button type="button" disabled={!chatgptState?.usage_enabled} onClick={()=>void testChatGPT()}>Test real ChatGPT inference</button>
+              </div>
+              <p className="subtle">A successful model list is not entitlement verification. Limits and credits can be reviewed in ChatGPT Settings; no balance is invented here.</p>
+            </>:<>
             <label className="field">Model identifier<input value={model} onChange={e=>setModel(e.target.value)}/></label>
             <label className="field">API key<input type="password" autoComplete="new-password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Paste provider API key"/></label>
             <div className="action-row"><button className="primary" type="button" disabled={key.length<12} onClick={()=>void manageKey('save')}>Save key</button>
               <button type="button" onClick={()=>void manageKey('test')}>Test connection</button>
               <button type="button" onClick={()=>void manageKey('remove')}>Remove</button></div>
-            <p role="status" className="dialog-feedback">{connectionResult||'Saving a key is not proof of provider access; use Test connection.'}</p>
+            <p role="status" className="dialog-feedback">{connectionResult||'A saved key is not verification. Sign in or run a real connection test.'}</p>
             {!native&&<label className="field">Development-only local access token<input type="password" value={token} onChange={e=>setToken(e.target.value)}/></label>}
-            <div className="info-note"><strong>ChatGPT / Codex sign-in</strong><p>Not enabled: this private commercial app has no registered, approved ChatGPT client ID. Codex subscription usage is not an OpenAI API key.</p>
-              <button type="button" onClick={()=>window.open('https://developers.openai.com/siwc/quickstart','_blank','noopener')}>Official eligibility guidance ↗</button></div>
+            </>}
             <div className="info-note"><strong>Claude account sign-in</strong><p>Unavailable for this independent app. Anthropic API-key access remains supported.</p></div>
           </>}
           {dialog==='terminal'&&<>
@@ -364,7 +444,7 @@ export default function App() {
             <p className="subtle">Local-first desktop assistant for registered AI tools and read-only MetaTrader 5 information. No broker orders can be submitted.</p>
             <h3>Privacy and security</h3>
             <p className="subtle">Provider credentials are stored in Windows Credential Manager by the backend. Chat instructions and retrieved data are sent only to the selected AI service. Voice recordings are sent to OpenAI when transcribing.</p>
-            <p className="subtle">ChatGPT account sign-in and commercial code signing require external eligibility or publisher credentials, and are not represented as active connections.</p>
+            <p className="subtle">Eligible open-source users can register a ChatGPT client through browser OAuth. A future paid-hosted app may require a separate approval; code signing still requires publisher credentials.</p>
           </>}
         </div>
       </section>
