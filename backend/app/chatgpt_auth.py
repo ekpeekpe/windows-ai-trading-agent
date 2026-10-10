@@ -204,6 +204,17 @@ class ChatGPTOSS:
                 self.error="ChatGPT sign-in failed; please retry"
                 raise ChatGPTAuthError(self.error) from exc
 
+    def select(self, account_key):
+        """Switch only to an already authorized, locally stored account."""
+        with self.lock:
+            registrations=self._registrations()
+            if not isinstance(account_key,str) or not any(r["key"]==account_key for r in registrations):
+                raise ChatGPTAuthError("Saved ChatGPT account not found")
+            if not self._get("tokens:"+account_key):
+                raise ChatGPTAuthError("That account needs browser reauthorization")
+            self._put("active",account_key)
+            return self.status()
+
     def access_token(self):
         with self.lock:
             a=self._active()
