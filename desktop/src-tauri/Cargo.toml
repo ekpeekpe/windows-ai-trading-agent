@@ -1,0 +1,14 @@
+[package]
+name = "windows-ai-trading-agent"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+name = "windows_ai_trading_agent_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
