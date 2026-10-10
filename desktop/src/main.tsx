@@ -1,7 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { createRoot } from 'react-dom/client';
 
 const API = '/api';
+const nativeDesktop = '__TAURI_INTERNALS__' in window;
 type Proposal = { account: number; symbol: string; side: string; volume: string; stop_loss?: string | null; take_profit?: string | null };
 type Pending = { id: string; proposal: Proposal; status: string; execution_enabled: false };
 type ChatLine = { role: string; text: string };
@@ -10,6 +12,9 @@ function App() {
   const [localToken, setLocalToken] = useState('');
   const [model, setModel] = useState('gpt-4.1-mini');
   const [provider, setProvider] = useState('openai');
+  const [apiKey, setApiKey] = useState('');
+  const [connections, setConnections] = useState<Record<string, boolean>>({});
+  const [connectionResult, setConnectionResult] = useState('Not checked');
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('Backend not checked');
   const [terminal, setTerminal] = useState('Not connected');
@@ -42,6 +47,18 @@ function App() {
     setRecording(false); setBusy(false); setStatus('Client request stopped; any server call may still finish.');
   }
   async function api(path: string, opts: RequestInit = {}): Promise<any> {
+    if (nativeDesktop) {
+      if (opts.body instanceof FormData) {
+        const audio = opts.body.get('audio');
+        if (!(audio instanceof Blob)) throw new Error('Audio recording missing');
+        const bytes = Array.from(new Uint8Array(await audio.arrayBuffer()));
+        return invoke('backend_transcribe', {audio: bytes, mime: audio.type.split(';')[0]});
+      }
+      return invoke('backend_request', {
+        method: opts.method || 'GET', path,
+        body: typeof opts.body === 'string' ? JSON.parse(opts.body) : null
+      });
+    }
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     try {
@@ -53,6 +70,30 @@ function App() {
       if (!r.ok) throw new Error(String(response.detail || 'HTTP ' + r.status));
       return response;
     } finally { if (abortRef.current === ctrl) abortRef.current = null; }
+  }
+  async function refreshConnections() {
+    try {
+      const data = await api('/providers');
+      setConnections(Object.fromEntries(data.providers.map((x: {provider:string,configured:boolean}) => [x.provider,x.configured])));
+    } catch (e) { setConnectionResult('Connection centre unavailable: ' + String(e)); }
+  }
+  useEffect(() => {
+    api('/health').then(() => setStatus('Backend ready — trading disabled'))
+      .catch(() => setStatus('Backend unavailable. Restart application or inspect installation.'));
+    if (nativeDesktop) void refreshConnections();
+  }, []);
+  async function credentialAction(action: 'save'|'test'|'remove') {
+    setConnectionResult('Checking ' + provider + ' connection…');
+    try {
+      const endpoint = '/providers/' + provider + (action === 'test' ? '/test' : '/key');
+      const result = await api(endpoint, action === 'save'
+        ? { method: 'PUT', body: JSON.stringify({api_key:apiKey}) }
+        : { method: action === 'remove' ? 'DELETE' : 'POST' });
+      setApiKey('');
+      setConnectionResult(action === 'test' ? (result.verified ? 'Provider verification succeeded' : 'Provider not verified') :
+        action === 'save' ? 'Key stored in Windows Credential Manager; not yet verified' : 'Stored key removed');
+      await refreshConnections();
+    } catch (e) { setApiKey(''); setConnectionResult('Connection action failed: ' + String(e)); }
   }
   async function checkTerminal() {
     setStatus('Checking real terminal');
@@ -125,11 +166,24 @@ function App() {
     <h1>Windows AI Trading Agent</h1>
     <p><strong>Read-only development pilot.</strong> No broker trading or chart control is enabled.</p>
     <p role="status" aria-live="polite"><strong>Status:</strong> {status}</p>
-    <p><label>Local access token (backend AGENT_LOCAL_TOKEN) <input type="password" autoComplete="off" value={localToken} onChange={e=>setLocalToken(e.target.value)} /></label></p>
+    {!nativeDesktop && <p><label>Development-only local access token <input type="password" autoComplete="off" value={localToken} onChange={e=>setLocalToken(e.target.value)} /></label></p>}
+    <section aria-label="AI connection centre">
+      <h2>AI connections</h2>
+      <p>ChatGPT account sign-in requires partner approval; Claude account sign-in is not enabled for this independent app. API keys are supported. Provider API charges are separate. No application license is required.</p>
+      <label>Provider <select value={provider} onChange={e=>{const p=e.target.value;setProvider(p);setModel(p==='openai'?'gpt-4.1-mini':p==='anthropic'?'claude-sonnet-4-5':'gemini-2.5-flash');}}>
+        <option value="openai">OpenAI API</option><option value="anthropic">Anthropic API</option><option value="gemini">Gemini API</option>
+      </select></label>
+      <p role="status">{provider}: {connections[provider] ? 'Key configured (not necessarily verified)' : 'No key configured'}</p>
+      <p><label>API key (saved only to Windows Credential Manager) <input type="password" autoComplete="new-password" value={apiKey} onChange={e=>setApiKey(e.target.value)} /></label></p>
+      <p><button type="button" onClick={()=>credentialAction('save')} disabled={apiKey.length<12}>Save key</button>{' '}
+         <button type="button" onClick={()=>credentialAction('test')}>Test connection</button>{' '}
+         <button type="button" onClick={()=>credentialAction('remove')}>Remove key</button></p>
+      <p role="status" aria-live="polite">{connectionResult}</p>
+    </section>
     <button type="button" onClick={checkTerminal}>Check MT5 terminal</button>
     <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}} aria-label="Actual MT5 terminal status">{terminal}</pre>
     <form onSubmit={send}>
-      <p><label>AI provider <select aria-label="AI provider" value={provider} onChange={e=>{const p=e.target.value;setProvider(p);setModel(p==='openai'?'gpt-4.1-mini':p==='anthropic'?'claude-sonnet-5':'gemini-2.5-flash');}}><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label> <label>Model <input value={model} onChange={e=>setModel(e.target.value)} /></label></p>
+      <p><label>Model <input value={model} onChange={e=>setModel(e.target.value)} /></label></p>
       <label htmlFor="instruction">Natural-language instruction</label>
       <textarea id="instruction" rows={3} style={{width:'100%'}} value={message} onChange={e=>setMessage(e.target.value)} required />
       <p><button type="submit" disabled={busy}>Send</button> <button type="button" onClick={microphone}>{recording ? 'Stop recording' : 'Push to talk'}</button> <button type="button" onClick={stop}>Stop/Cancel</button></p>
