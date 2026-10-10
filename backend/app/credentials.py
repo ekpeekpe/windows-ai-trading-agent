@@ -21,11 +21,13 @@ def vault():
     if os.name != "nt":
         raise CredentialUnavailable("Protected credential storage is supported on Windows only")
     try:
-        import keyring
         from keyring.backends.Windows import WinVaultKeyring
-        if not isinstance(keyring.get_keyring(), WinVaultKeyring):
+        # Always use OS-protected WinVault, regardless of global keyring setup.
+        # Never fall back to third-party or file-based credential backends.
+        backend = WinVaultKeyring()
+        if backend.priority <= 0:
             raise CredentialUnavailable("Windows Credential Manager is unavailable")
-        return keyring
+        return backend
     except ImportError as exc:
         raise CredentialUnavailable("Windows credential storage dependency not installed") from exc
 
