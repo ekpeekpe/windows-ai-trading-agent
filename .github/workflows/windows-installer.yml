@@ -67,6 +67,20 @@ jobs:
               }
               throw 'Frozen backend failed authenticated readiness; see sanitized diagnostics above'
             }
+            # This is the first real, *frozen* Windows Credential Manager
+            # integration check, not a mocked provider or browser callback.
+            $root = 'http://127.0.0.1:' + $port
+            $headers = @{'x-agent-token'=$env:AGENT_LOCAL_TOKEN}
+            $authStatus = Invoke-RestMethod -Uri ($root + '/chatgpt/status') -TimeoutSec 5 -Headers $headers
+            if (-not $authStatus.available) {
+              throw ('Frozen ChatGPT credentials are unavailable: ' + $authStatus.state + ' — ' + $authStatus.error)
+            }
+            $begin = Invoke-RestMethod -Uri ($root + '/chatgpt/start') -Method POST -ContentType 'application/json' -Headers $headers -Body '{"account_key":null,"launch_browser":false}' -TimeoutSec 5
+            if ($begin.authorization_url -notlike 'https://auth.openai.com/api/accounts/authorize?*') {
+              throw 'Frozen backend failed to initialize official OAuth listener'
+            }
+            Invoke-RestMethod -Uri ($root + '/chatgpt/cancel') -Method POST -Headers $headers -TimeoutSec 5 | Out-Null
+            Write-Host 'PASS: Frozen Windows vault, OAuth listener, status and native-browser handoff are functional (no external login attempted)'
             Write-Host 'PASS: PyInstaller backend starts, responds to authenticated request and remains read-only'
           } finally {
             if (-not $child.HasExited) { Stop-Process -Id $child.Id -Force }
