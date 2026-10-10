@@ -1,23 +1,25 @@
 {
-  "run_id": 38072166583,
-  "sha": "19320639620a8da1c3c15dc7bb93d369c4f9a150",
-  "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072166583",
-  "installer_result": "cancelled",
+  "run_id": 38072244101,
+  "sha": "764183ae55b7d3b5af1b76facf548505b14cfdff",
+  "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072244101",
+  "installer_result": "failure",
   "jobs": [
     {
       "name": "package-windows",
       "status": "completed",
-      "conclusion": "cancelled",
-      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072166583/job/114271645616",
-      "failed_steps": []
+      "conclusion": "failure",
+      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072244101/job/114271925729",
+      "failed_steps": [
+        "Smoke-test frozen Windows Python backend over authenticated HTTP"
+      ]
     },
     {
       "name": "report",
       "status": "in_progress",
       "conclusion": null,
-      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072166583/job/114271901457",
+      "url": "https://github.com/ekpeekpe/windows-ai-trading-agent/actions/runs/38072244101/job/114273533064",
       "failed_steps": []
     }
   ],
-  "generated_at": "2026-10-10T17:33:56.807Z"
+  "generated_at": "2026-10-10T17:42:07.871Z"
 }
