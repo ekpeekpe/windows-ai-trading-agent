@@ -133,3 +133,148 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
   .form-grid { grid-template-columns:1fr; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; animation:none!important; } }
+
+
+/* Compact Windows-style provider settings window. The entire pane fits
+   within the desktop window; no nested scrollbars or long marketing notes. */
+.provider-dialog {
+  width:min(795px,calc(100vw - 26px));
+  height:min(540px,calc(100dvh - 26px));
+  min-width:0;
+  max-height:none;
+  border-radius:11px;
+  background:var(--chrome);
+  box-shadow:0 24px 75px #0008,0 1px 0 #ffffff0a inset;
+}
+.provider-dialog .dialog-head {
+  flex:none;
+  padding:10px 18px;
+  min-height:49px;
+}
+.provider-dialog .dialog-head h2 {
+  font-size:14px;
+  letter-spacing:0;
+  font-weight:600;
+}
+.provider-dialog .dialog-body {
+  flex:1;
+  display:flex;
+  padding:0;
+  min-height:0;
+  overflow:hidden;
+}
+.connection-shell {
+  display:grid;
+  grid-template-columns:188px minmax(0,1fr);
+  width:100%;
+  height:100%;
+  min-height:0;
+  font-size:12px;
+}
+.connection-rail {
+  min-width:0;
+  background:var(--bg);
+  border-right:1px solid var(--line);
+  padding:12px 9px;
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.provider-dialog .connection-choice {
+  border:1px solid transparent;
+  border-radius:7px;
+  background:transparent;
+  color:var(--text);
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:2px;
+  padding:10px 11px;
+  text-align:left;
+  font-weight:500;
+  width:100%;
+}
+.provider-dialog .connection-choice small {font-size:10px;color:var(--muted);font-weight:400;}
+.provider-dialog .connection-choice.selected {
+  background:var(--hover);
+  border-color:var(--line);
+  box-shadow:inset 3px 0 0 var(--accent);
+}
+.provider-dialog .connection-pane {
+  padding:15px 20px;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:11px;
+}
+.connection-heading {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  min-height:26px;
+}
+.connection-heading strong {font-size:15px; font-weight:620;}
+.connection-state {
+  border-radius:14px;
+  padding:3px 9px;
+  border:1px solid var(--line);
+  color:var(--muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.connection-state.online {color:var(--accent);border-color:var(--accent);}
+.connection-group {display:flex;flex-direction:column;gap:6px;min-width:0;}
+.compact-label {font-size:11px;font-weight:560;color:var(--text);}
+.connection-buttons {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  width:100%;
+  min-width:0;
+}
+.provider-dialog .connection-buttons select {min-width:0;flex:1;}
+.provider-dialog .connection-buttons button {flex:none;white-space:nowrap;}
+.provider-dialog input:not([type="checkbox"]),
+.provider-dialog select {
+  background:var(--input);
+  color:var(--text);
+  min-width:0;
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:5px;
+  height:34px;
+  padding:5px 9px;
+  font-size:12px;
+}
+.provider-dialog button:not(.icon-button) {
+  padding:6px 10px;
+  border-radius:5px;
+  min-height:34px;
+  white-space:nowrap;
+}
+.connection-help {color:var(--muted);font-size:10px;line-height:1.3;}
+.connection-inline-actions {display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+.connection-feedback {
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:5px;
+  padding:8px 10px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.35;
+  min-height:38px;
+  max-height:60px;
+  overflow-wrap:anywhere;
+  margin:auto 0 0!important;
+}
+.connection-pane .field {margin:2px 0;}
+@media(max-width:720px) {
+  .connection-shell {grid-template-columns:145px minmax(0,1fr);}
+  .connection-rail {padding:7px 4px;}
+  .provider-dialog .connection-choice {padding:7px;}
+  .provider-dialog .connection-pane {padding:10px 12px;gap:8px;}
+  .provider-dialog .connection-buttons {flex-wrap:wrap;}
+  .provider-dialog .connection-buttons select {min-width:170px;}
+}
