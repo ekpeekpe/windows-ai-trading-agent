@@ -70,9 +70,13 @@ class ChatGPTOSS:
                 active=self._active()
                 accounts=[{"key":r["key"],"email":r.get("email"),"client_id":r["client_id"],
                            "connected":bool(self._get("tokens:"+r["key"]))} for r in self._registrations()]
-            except CredentialUnavailable:
+            except Exception as exc:
+                # In a frozen Windows app, unavailable WinVault backends and
+                # credential decoding errors must not return an opaque HTTP 500.
                 return {"available":False,"connected":False,"usage_enabled":False,
-                        "state":"windows_vault_unavailable","accounts":[]}
+                        "state":"credential_store_error","accounts":[],
+                        "error":"Windows Credential Manager could not be read ("+
+                                type(exc).__name__+"). Check your Windows login and reinstall if needed."}
             if self.pending and time.monotonic()>self.pending["until"]:
                 self.pending=None
                 self._close()
@@ -83,7 +87,7 @@ class ChatGPTOSS:
                     "email":active.get("email") if active else None,
                     "accounts":accounts,"error":self.error}
 
-    def start(self, account_key=None):
+    def start(self, account_key=None, *, launch_browser=True):
         with self.lock:
             if self.pending: raise ChatGPTAuthError("Sign-in already underway")
             self.store() # fail closed when Windows vault is unavailable
@@ -132,12 +136,25 @@ class ChatGPTOSS:
                 if selected.get("email"): params["login_hint"]=selected["email"]
             else: params["agent_name_hint"]="Windows AI Trading Agent"
             threading.Thread(target=server.serve_forever,daemon=True).start()
-            try: opened=bool(self.browser(AUTH+"?"+urlencode(params)))
-            except Exception: opened=False
-            if not opened:
-                self.pending=None;self._close()
-                raise ChatGPTAuthError("Could not open the system browser")
-            return {"state":"waiting_for_browser","expires_in":300}
+            # In the packaged Tauri application only native Rust opens this
+            # URL. It is never sent to the renderer in production.
+            url=AUTH+"?"+urlencode(params)
+            if launch_browser:
+                try: opened=bool(self.browser(url))
+                except Exception: opened=False
+                if not opened:
+                    self.pending=None;self._close()
+                    raise ChatGPTAuthError("Windows could not open the default browser. Choose a browser in the desktop app.")
+                return {"state":"waiting_for_browser","expires_in":300}
+            return {"state":"waiting_for_browser","expires_in":300,"authorization_url":url}
+
+    def cancel(self):
+        with self.lock:
+            if self.pending:
+                self.pending=None
+                self._close()
+                self.error="Sign-in cancelled"
+            return {"cancelled":True}
 
     def complete(self,query):
         with self.lock:
