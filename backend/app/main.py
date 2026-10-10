@@ -187,3 +187,21 @@ def test_provider_connection(provider: str):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Provider connection failed: {type(exc).__name__}") from exc
+
+from .discovery import discover_terminals
+
+class TerminalSelection(BaseModel):
+    path: str = Field(min_length=1, max_length=2048)
+
+@app.get("/terminals", dependencies=[Depends(authorized)])
+def terminals_list():
+    return {"terminals": discover_terminals(), "selected": mt5.terminal_path}
+
+@app.post("/terminals/select", dependencies=[Depends(authorized)])
+def terminals_select(request: TerminalSelection):
+    discovered = discover_terminals()
+    if request.path not in discovered:
+        raise HTTPException(status_code=422, detail="Select a discovered MetaTrader 5 installation")
+    mt5.terminal_path = request.path
+    return {"selected": request.path, "connected": False,
+            "message": "Terminal selected; connection and account not yet verified"}
