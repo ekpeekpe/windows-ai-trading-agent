@@ -1,29 +1,47 @@
-# Windows AI Trading Agent — Pilot
+# Windows AI Trading Agent — developer pilot (not live-trading ready)
 
-Local-first Windows desktop AI assistant for MetaTrader 5. **Under development; not certified for live trading.**
+Local-first, Windows-oriented MT5 assistant with typed chat, OpenAI/Anthropic/Gemini tool-call adapters, opt-in chart helper, microphone transcription, and deliberately disabled broker execution.
 
-## Implemented foundation
-- FastAPI backend with restricted endpoints and Pydantic validation.
-- Official MetaTrader5 Python-package adapter for real terminal status, quotes and account inspection (Windows runtime required).
-- Registered, explicitly bounded read-only tools; no arbitrary shell/Python commands.
-- Separate trade proposal and explicit-approval safety state machine. Execution is **disabled** in this pilot foundation.
-- OpenAI official SDK chat tool-call adapter. API keys remain backend-only.
-- React/TypeScript frontend skeleton with status and typed chat.
-- Unit tests for safety rules and tool validation.
+**This is a development build.** The Python source and mocked integrations have portable tests. No Windows terminal, AI provider, MQL5 compilation, voice hardware, or Tauri package has yet been verified end-to-end.
 
-## Windows setup
-1. Install Python 3.11 or 3.12, Node.js 20+, Rust, Microsoft C++ Build Tools and WebView2.
-2. Install and sign in to the MetaTrader 5 Windows terminal.
-3. In PowerShell: `cd backend; py -3.12 -m venv .venv; .venv\Scripts\Activate.ps1; pip install -e ".[windows,dev]"`
-4. Set `OPENAI_API_KEY` in the shell or a protected OS secret mechanism. **Do not commit secrets.**
-5. Start backend: `uvicorn app.main:app --host 127.0.0.1 --port 8765`.
-6. In a second terminal: `cd desktop; npm install; npm run dev`.
-7. Run backend tests: `cd backend; pytest -q`.
+## Architecture
 
-The development UI uses a localhost HTTP backend and therefore is **not yet an authenticated production desktop bridge**. Do not expose the backend beyond loopback. Desktop packaging and stronger IPC are pending.
+- `backend/`: FastAPI + official provider SDK adapters + `MetaTrader5` Python read API.
+- `desktop/`: accessible React/Vite development interface; minimal Tauri 2 dev shell under `src-tauri/`.
+- `mt5/ChartControlEA.mq5`: restricted chart-only companion with request/response files.
+- `docs/SETUP.md`: exact Windows installation and launch instructions.
+- `docs/STATUS.md`: evidence and remaining acceptance criteria.
 
-## Safety status
-Order proposals are data only. They never call `order_send`. No trade execution endpoint exists; even an approval cannot place an order. Demo and live trade execution remain explicitly out of scope until exact-action confirmation, broker constraints, limits, reconciliation, and real-terminal testing are complete.
+## Local commands (Windows PowerShell)
 
-## Current limitations
-The backend cannot be validated against MT5 in the present Linux environment. Chart control MQL5 helper, Anthropic/Gemini, voice, desktop Tauri bundling, broker-side validations, and real-terminal acceptance tests remain pending. See docs/STATUS.md.
+```powershell
+cd backend
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[windows,dev]"
+$env:AGENT_LOCAL_TOKEN = "replace-with-a-random-32-byte-token"
+$env:OPENAI_API_KEY = "your-own-api-key"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+```
+
+In a separate terminal:
+
+```powershell
+cd desktop
+npm install
+npm run dev
+# or: npm run tauri dev (needs Rust, Tauri Windows prerequisites)
+```
+
+Enter the same local token in the frontend. The frontend does not store provider API keys. Only `/health` is accessible without the local token. For voice recognition, the selected reasoning provider can differ from the speech provider (OpenAI transcription).
+
+The backend **has no `order_send` entry point**. A proposal acknowledgement returns `approved_not_executed`; it never places a trade. Do not deploy or expose the development service on a network.
+
+## Tests
+
+```powershell
+cd backend
+python -m pytest -q
+```
+
+Real terminal/provider tests are opt-in; see `docs/TESTING.md`. All production packaging, broker order validation and demo execution remain incomplete.
