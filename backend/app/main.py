@@ -255,6 +255,16 @@ def chatgpt_start(request: ChatGPTStartRequest):
     except (CredentialUnavailable, ChatGPTAuthError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+class ChatGPTSelectRequest(BaseModel):
+    account_key: str = Field(min_length=1, max_length=100)
+
+@app.post("/chatgpt/select", dependencies=[Depends(authorized)])
+def chatgpt_select(request: ChatGPTSelectRequest):
+    try:
+        return chatgpt.select(request.account_key)
+    except ChatGPTAuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
 @app.post("/chatgpt/cancel", dependencies=[Depends(authorized)])
 def chatgpt_cancel():
     return chatgpt.cancel()
