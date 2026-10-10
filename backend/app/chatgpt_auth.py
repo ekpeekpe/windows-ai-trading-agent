@@ -244,9 +244,14 @@ class ChatGPTOSS:
             with self.client(timeout=20,follow_redirects=False) as http:
                 r=http.get(RESOURCE+"/models",headers={"Authorization":"Bearer "+token})
                 r.raise_for_status();data=r.json()
-            return [{"slug":m["slug"],"display_name":m.get("display_name",m["slug"])}
+            items=[{"slug":m["slug"],"display_name":m.get("display_name",m["slug"]),
+                    **({"created_at":m["created_at"]} if isinstance(m.get("created_at"),str) else {})}
                     for m in data.get("models",[]) if m.get("visibility")=="list"
                     and isinstance(m.get("slug"),str)][:100]
+            # The catalog is not a performance ranking. Use dated metadata
+            # for chronological order; otherwise preserve a stable name order.
+            return sorted(items,key=lambda m:(0,m["created_at"],m["slug"]) if m.get("created_at")
+                          else (1,"",m["slug"]))
         except Exception as exc:
             raise ChatGPTAuthError("Unable to retrieve ChatGPT model catalog") from exc
 
