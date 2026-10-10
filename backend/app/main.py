@@ -11,6 +11,7 @@ from .providers import AnthropicAgent, GeminiAgent
 from .safety import TradeProposal, ProposalStore
 from .audit import record
 from .tools import ToolRegistry
+from .credentials import get_key, set_key, delete_key, connection_status, check_connection, CredentialUnavailable, validate_provider
 
 app = FastAPI(title="Windows AI Trading Agent", version="0.2.0")
 mt5 = MT5ReadOnly(os.getenv("MT5_TERMINAL_PATH") or None,
@@ -79,13 +80,13 @@ def quote(symbol: str):
 
 @app.post("/chat", dependencies=[Depends(authorized)])
 def chat(request: ChatRequest):
-    keys = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
-    if not os.getenv(keys[request.provider]):
-        raise HTTPException(status_code=503, detail=f"{keys[request.provider]} is not configured")
+    secret = get_key(request.provider)
+    if not secret:
+        raise HTTPException(status_code=503, detail=f"No {request.provider} API key configured")
     try:
         registry = ToolRegistry(mt5=mt5, chart_ipc=(ChartIPC(default_common_files()) if os.getenv("ENABLE_CHART_CONTROL") == "1" else None))
         provider_type = {"openai": OpenAIAgent, "anthropic": AnthropicAgent, "gemini": GeminiAgent}[request.provider]
-        return {"answer": provider_type(tools=registry).ask(request.message, request.model)}
+        return {"answer": provider_type(tools=registry, api_key=secret).ask(request.message, request.model)}
     except AgentCancelled as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ProviderProtocolError as exc:
@@ -112,12 +113,13 @@ from .speech import SpeechError, transcribe
 
 @app.post("/transcribe", dependencies=[Depends(authorized)])
 def transcription(audio: UploadFile = File(...)):
-    if not os.getenv("OPENAI_API_KEY"):
-        raise HTTPException(status_code=503, detail="OPENAI_API_KEY required for speech transcription")
+    speech_key = get_key("openai")
+    if not speech_key:
+        raise HTTPException(status_code=503, detail="OpenAI API key required for speech transcription")
     data = audio.file.read(10 * 1024 * 1024 + 1)
     mime_type = (audio.content_type or "").split(";")[0]
     try:
-        text = transcribe(data, mime_type)
+        text = transcribe(data, mime_type, api_key=speech_key)
         return {"text": text, "speech_provider": "openai"}
     except SpeechError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -141,3 +143,47 @@ def chart(request: ChartRequest):
                                                         request.timeframe, request.period)
     except (ChartControlError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+# Provider connection centre. Never send stored secrets back to the UI.
+class KeyRequest(BaseModel):
+    api_key: str = Field(min_length=12, max_length=512)
+
+@app.get("/providers", dependencies=[Depends(authorized)])
+def providers_status():
+    return {"providers": connection_status(), "account_auth": {
+            "chatgpt": "partner_approval_required",
+            "claude": "independent_app_flow_not_available"}}
+
+@app.put("/providers/{provider}/key", dependencies=[Depends(authorized)])
+def put_key(provider: str, data: KeyRequest):
+    try:
+        set_key(provider, data.api_key)
+        return {"provider": provider, "configured": True, "verified": False}
+    except (CredentialUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=503 if isinstance(exc, CredentialUnavailable) else 422,
+                            detail=str(exc)) from exc
+
+@app.delete("/providers/{provider}/key", dependencies=[Depends(authorized)])
+def remove_key(provider: str):
+    try:
+        delete_key(provider)
+        return {"provider": provider, "configured": False}
+    except (CredentialUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=503 if isinstance(exc, CredentialUnavailable) else 422,
+                            detail=str(exc)) from exc
+
+@app.post("/providers/{provider}/test", dependencies=[Depends(authorized)])
+def test_provider_connection(provider: str):
+    try:
+        validate_provider(provider)
+        key = get_key(provider)
+        if not key:
+            raise HTTPException(status_code=409, detail="Configure an API key first")
+        check_connection(provider, key)
+        return {"provider": provider, "verified": True, "check": "provider_models_list"}
+    except HTTPException:
+        raise
+    except (CredentialUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Provider connection failed: {type(exc).__name__}") from exc
