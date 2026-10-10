@@ -8,6 +8,10 @@ test.beforeEach(async ({ page }) => {
     const path = url.pathname;
     const fake = path.endsWith('/health')
       ? { ok: true, trading_enabled: false }
+      : path.endsWith('/chatgpt/status')
+      ? { available: true, connected: false, usage_enabled: false, state: 'disconnected', accounts: [] }
+      : path.endsWith('/chatgpt/start')
+      ? { state: 'waiting_for_browser', expires_in: 300 }
       : path.endsWith('/providers')
       ? { providers: ['openai', 'anthropic', 'gemini'].map(provider => ({provider, configured: false})) }
       : path.endsWith('/chat')
@@ -73,4 +77,23 @@ test('appearance dialog offers working theme selection', async ({page}) => {
   await page.getByRole('button',{name:'Dark'}).click();
   await expect(page.getByRole('button',{name:'Dark'})).toHaveAttribute('aria-pressed','true');
   await page.screenshot({path:'test-results/dark-theme.png',fullPage:false});
+});
+
+test('ChatGPT OSS sign-in starts a local browser flow without API key', async ({page}) => {
+  let requested=false;
+  await page.route('**/api/chatgpt/start', async route => {
+    requested=true;
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({account_key:null});
+    await route.fulfill({status:200,contentType:'application/json',
+      body:JSON.stringify({state:'waiting_for_browser',expires_in:300})});
+  });
+  await page.getByRole('button',{name:'AI Provider'}).click();
+  await page.getByRole('menuitem',{name:'Connections and API keys'}).click();
+  const dlg=page.getByRole('dialog',{name:'AI connections'});
+  await expect(dlg.getByText('Official open-source ChatGPT sign-in')).toBeVisible();
+  await expect(dlg.getByText('API key',{exact:true})).toHaveCount(0);
+  await dlg.getByRole('button',{name:'Continue with ChatGPT'}).click();
+  await expect(dlg.getByText(/Complete authorization in your browser/)).toBeVisible();
+  expect(requested).toBe(true);
 });
