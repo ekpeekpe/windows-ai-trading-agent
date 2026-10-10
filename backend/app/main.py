@@ -196,6 +196,25 @@ def test_provider_connection(provider: str):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Provider connection failed: {type(exc).__name__}") from exc
 
+from .model_catalog import provider_models
+
+@app.get("/providers/{provider}/models", dependencies=[Depends(authorized)])
+def provider_models_endpoint(provider: str):
+    try:
+        validate_provider(provider)
+        secret=get_key(provider)
+        if not secret: raise HTTPException(status_code=409, detail="Connect this provider first")
+        return {"provider":provider,"models":provider_models(provider,secret),
+                "order":"oldest_to_newest_when_release_dates_exist",
+                "note":"Model visibility is not guaranteed inference entitlement."}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422,detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502,detail=
+                            f"Could not load models from {provider}: {type(exc).__name__}") from exc
+
 from .discovery import discover_terminals
 
 class TerminalSelection(BaseModel):
