@@ -1,7 +1,13 @@
 # AI connection eligibility and privacy (October 2026)
 
 ## OpenAI / ChatGPT
-OpenAI has introduced Sign in with ChatGPT for participating partners, including (where eligible) separate permission to use a customer's ChatGPT plan. This independent commercial Windows desktop app has **not** been approved/registered as a partner. Neither login nor subscription usage is implemented. Do not attempt undocumented ChatGPT OAuth endpoints, cookie or token extraction. Official details:
+**Update October 2026:** This repository is public. The open-source, locally hosted flow is now implemented independently of the partner programme and uses the documented `dynamic_agent_client` first-time registration. Eligible users obtain an issued `oaiapp_…` client ID in their system browser, without sharing account passwords or buying a separate OpenAI API key. The backend verifies PKCE, state, nonce and the signed ID token, and stores refreshable credentials in Windows Credential Manager. ChatGPT-plan usage requires explicit `chatgpt.tokens.use.direct` consent and a successful Responses inference stream. A live account sign-in has **not** been verified in CI.
+
+A paid or remotely hosted future product follows a separate commercial eligibility process. Public GitHub visibility by itself does **not** create an open-source license; the repository owner must add an appropriate license.
+
+Implementation/eligibility: [ChatGPT / Codex authentication](CHATGPT_CODEX_ELIGIBILITY.md).
+
+Official details:
 - https://help.openai.com/en/articles/20001410-sign-in-with-chatgpt
 - https://help.openai.com/en/articles/20001542-using-your-chatgpt-plan-in-other-apps-and-sites
 - https://help.openai.com/en/articles/9039756-managing-billing-settings-on-the-chatgpt-web-and-api-platform
