@@ -98,3 +98,20 @@ def decide(proposal_id: str, request: DecisionRequest):
         return {"status": state, "order_submitted": False}
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+from fastapi import File, UploadFile
+from .speech import SpeechError, transcribe
+
+@app.post("/transcribe", dependencies=[Depends(authorized)])
+def transcription(audio: UploadFile = File(...)):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(status_code=503, detail="OPENAI_API_KEY required for speech transcription")
+    data = audio.file.read(10 * 1024 * 1024 + 1)
+    mime_type = (audio.content_type or "").split(";")[0]
+    try:
+        text = transcribe(data, mime_type)
+        return {"text": text, "speech_provider": "openai"}
+    except SpeechError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Speech provider failed: {type(exc).__name__}") from exc
