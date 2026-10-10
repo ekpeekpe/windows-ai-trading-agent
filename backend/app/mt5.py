@@ -1,58 +1,113 @@
-"""Read-only MetaTrader 5 interface. Never returns invented market data."""
+"""Genuine read-only MT5 gateway. Never substitutes offline/sample data."""
 from __future__ import annotations
-from typing import Any
+
+from contextlib import contextmanager
+from threading import RLock
+from typing import Any, Iterator
+
+_LOCK = RLock()  # Official MT5 module operates against a process-wide terminal session.
+
 
 class MT5Unavailable(RuntimeError):
-    pass
+    """Terminal, account, or requested market data are unavailable."""
+
 
 class MT5ReadOnly:
-    def __init__(self, terminal_path: str | None = None):
+    def __init__(self, terminal_path: str | None = None, expected_login: int | None = None):
         self.terminal_path = terminal_path
+        self.expected_login = expected_login
 
-    def _connect(self):
-        try:
-            import MetaTrader5 as mt5
-        except ImportError as exc:
-            raise MT5Unavailable("MetaTrader5 package requires the supported Windows Python runtime") from exc
-        opts = {"path": self.terminal_path} if self.terminal_path else {}
-        if not mt5.initialize(**opts):
-            raise MT5Unavailable(f"MT5 initialization failed: {mt5.last_error()}")
-        return mt5
+    @contextmanager
+    def _session(self) -> Iterator[Any]:
+        with _LOCK:
+            try:
+                import MetaTrader5 as mt5
+            except ImportError as exc:
+                raise MT5Unavailable("MetaTrader5 is unavailable; use supported Windows Python") from exc
+            kwargs = {"path": self.terminal_path} if self.terminal_path else {}
+            if not mt5.initialize(timeout=5000, **kwargs):
+                raise MT5Unavailable(f"MT5 initialization failed: {mt5.last_error()}")
+            try:
+                terminal = mt5.terminal_info()
+                account = mt5.account_info()
+                if terminal is None or not bool(terminal.connected):
+                    raise MT5Unavailable("MT5 terminal is disconnected")
+                if account is None:
+                    raise MT5Unavailable("No authenticated account in terminal")
+                if self.expected_login is not None and int(account.login) != self.expected_login:
+                    raise MT5Unavailable("Selected MT5 account changed; reconnect explicitly")
+                yield mt5
+            finally:
+                mt5.shutdown()
 
     def status(self) -> dict[str, Any]:
-        mt5 = self._connect()
-        try:
-            t = mt5.terminal_info()
-            a = mt5.account_info()
-            if t is None:
-                raise MT5Unavailable(f"Terminal information unavailable: {mt5.last_error()}")
-            return {"connected": bool(t.connected), "terminal": t.name, "path": t.path,
-                    "account": None if a is None else {"login": a.login, "server": a.server,
-                    "trade_mode": int(a.trade_mode)}}
-        finally:
-            mt5.shutdown()
+        with self._session() as mt5:
+            t, a = mt5.terminal_info(), mt5.account_info()
+            mode = int(a.trade_mode)
+            return {"connected": True, "terminal": t.name, "path": t.path,
+                    "account": {"login": int(a.login), "server": a.server,
+                                "trade_mode": mode, "mode_label": {0: "demo", 1: "contest", 2: "real"}.get(mode, "unknown")},
+                    "source": "MetaTrader5"}
+
+    def symbols(self, limit: int = 100) -> dict[str, Any]:
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        with self._session() as mt5:
+            items = mt5.symbols_get()
+            if items is None:
+                raise MT5Unavailable(f"Symbol list query failed: {mt5.last_error()}")
+            return {"symbols": [s.name for s in items[:limit]], "total": len(items), "source": "MetaTrader5"}
+
+    def specifications(self, symbol: str) -> dict[str, Any]:
+        with self._session() as mt5:
+            s = mt5.symbol_info(symbol)
+            if s is None:
+                raise MT5Unavailable(f"Symbol not available: {symbol}")
+            return {"symbol": s.name, "point": float(s.point), "digits": int(s.digits),
+                    "volume_min": float(s.volume_min), "volume_max": float(s.volume_max),
+                    "volume_step": float(s.volume_step), "trade_mode": int(s.trade_mode),
+                    "visible": bool(s.visible), "source": "MetaTrader5"}
 
     def quote(self, symbol: str) -> dict[str, Any]:
-        mt5 = self._connect()
-        try:
-            if not mt5.symbol_select(symbol, True):
-                raise MT5Unavailable(f"Symbol unavailable: {symbol}")
+        with self._session() as mt5:
+            if mt5.symbol_info(symbol) is None:
+                raise MT5Unavailable(f"Symbol not available: {symbol}")
             tick = mt5.symbol_info_tick(symbol)
-            if tick is None:
-                raise MT5Unavailable(f"No tick for {symbol}: {mt5.last_error()}")
+            if tick is None or int(tick.time_msc) <= 0:
+                raise MT5Unavailable(f"No valid tick for {symbol}; check Market Watch and session")
             return {"symbol": symbol, "bid": float(tick.bid), "ask": float(tick.ask),
                     "time_msc": int(tick.time_msc), "source": "MetaTrader5"}
-        finally:
-            mt5.shutdown()
+
+    def rates(self, symbol: str, timeframe: str = "H1", count: int = 50) -> dict[str, Any]:
+        if not 1 <= count <= 500:
+            raise ValueError("count must be between 1 and 500")
+        if timeframe not in ("M1", "M5", "M15", "M30", "H1", "H4", "D1"):
+            raise ValueError("Unsupported timeframe")
+        with self._session() as mt5:
+            if mt5.symbol_info(symbol) is None:
+                raise MT5Unavailable(f"Symbol not available: {symbol}")
+            bars = mt5.copy_rates_from_pos(symbol, getattr(mt5, "TIMEFRAME_" + timeframe), 0, count)
+            if bars is None:
+                raise MT5Unavailable(f"Historical data query failed: {mt5.last_error()}")
+            return {"symbol": symbol, "timeframe": timeframe, "source": "MetaTrader5",
+                    "bars": [{k: (int(b[k]) if k in ("time", "tick_volume", "spread", "real_volume") else float(b[k]))
+                              for k in ("time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume")}
+                             for b in bars]}
 
     def positions(self) -> dict[str, Any]:
-        mt5 = self._connect()
-        try:
+        with self._session() as mt5:
             rows = mt5.positions_get()
             if rows is None:
                 raise MT5Unavailable(f"Position query failed: {mt5.last_error()}")
-            return {"positions": [{"ticket": p.ticket, "symbol": p.symbol,
-                "type": int(p.type), "volume": float(p.volume),
-                "profit": float(p.profit)} for p in rows], "source": "MetaTrader5"}
-        finally:
-            mt5.shutdown()
+            return {"positions": [{"ticket": int(p.ticket), "symbol": p.symbol,
+                       "type": int(p.type), "volume": float(p.volume), "profit": float(p.profit)} for p in rows],
+                    "source": "MetaTrader5"}
+
+    def pending_orders(self) -> dict[str, Any]:
+        with self._session() as mt5:
+            rows = mt5.orders_get()
+            if rows is None:
+                raise MT5Unavailable(f"Pending-order query failed: {mt5.last_error()}")
+            return {"orders": [{"ticket": int(o.ticket), "symbol": o.symbol, "type": int(o.type),
+                     "volume_current": float(o.volume_current), "price_open": float(o.price_open)} for o in rows],
+                    "source": "MetaTrader5"}
