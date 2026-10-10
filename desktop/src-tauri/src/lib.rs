@@ -81,6 +81,27 @@ async fn backend_transcribe(state: State<'_, Backend>, audio: Vec<u8>, mime: Str
     }
 }
 
+/// Kill the frozen PyInstaller parent and its child worker on Windows.
+///
+/// A one-file Python executable can spawn a second process. Killing only the
+/// Tauri sidecar handle can leave that worker running after the UI exits.
+fn stop_backend_process_tree(process: CommandChild) {
+    let pid = process.pid();
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        let taskkill = std::path::PathBuf::from(system_root).join("System32").join("taskkill.exe");
+        let _ = std::process::Command::new(taskkill)
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x08000000)
+            .status();
+    }
+    #[cfg(not(windows))]
+    let _ = pid;
+    let _ = process.kill();
+}
+
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -110,7 +131,7 @@ pub fn run() {
         if matches!(event, tauri::RunEvent::Exit) {
             if let Some(state) = handle.try_state::<Backend>() {
                 if let Ok(mut child) = state.child.lock() {
-                    if let Some(process) = child.take() { let _ = process.kill(); }
+                    if let Some(process) = child.take() { stop_backend_process_tree(process); }
                 }
             }
         }
