@@ -338,7 +338,7 @@ export default function App() {
             <h3>Backend</h3><pre className="result">{health}</pre><h3>MT5</h3><pre className="result">{terminalInfo}</pre>
           </>}
           {dialog==='about'&&<>
-            <p><strong>Windows AI Trading Agent</strong> · v0.2.0 development pilot</p>
+            <p><strong>Windows AI Trading Agent</strong> · v0.3.0 development pilot</p>
             <p className="subtle">Local-first desktop assistant for registered AI tools and read-only MetaTrader 5 information. No broker orders can be submitted.</p>
             <h3>Privacy and security</h3>
             <p className="subtle">Provider credentials are stored in Windows Credential Manager by the backend. Chat instructions and retrieved data are sent only to the selected AI service. Voice recordings are sent to OpenAI when transcribing.</p>
