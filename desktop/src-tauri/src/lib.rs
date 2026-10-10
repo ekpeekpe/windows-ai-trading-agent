@@ -23,8 +23,8 @@ fn valid_part(value: &str) -> bool {
 
 fn allowed(method: &str, path: &str) -> bool {
     match (method, path) {
-        ("GET", "/health" | "/terminal" | "/providers") => true,
-        ("POST", "/chat" | "/proposals" | "/chart") => true,
+        ("GET", "/health" | "/terminal" | "/providers" | "/terminals") => true,
+        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select") => true,
         _ => {
             let parts: Vec<&str> = path.split('/').collect();
             match (method, parts.as_slice()) {
