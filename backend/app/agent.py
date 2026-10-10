@@ -16,10 +16,10 @@ class ProviderProtocolError(RuntimeError):
     pass
 
 class OpenAIAgent:
-    def __init__(self, client=None, tools=None):
+    def __init__(self, client=None, tools=None, api_key=None):
         if client is None:
             from openai import OpenAI
-            client = OpenAI(timeout=20, max_retries=0)
+            client = OpenAI(api_key=api_key, timeout=20, max_retries=0)
         self.client = client
         self.tools = tools if tools is not None else ToolRegistry()
 
