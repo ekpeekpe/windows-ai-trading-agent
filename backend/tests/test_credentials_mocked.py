@@ -23,7 +23,9 @@ def test_credential_lifecycle(monkeypatch):
 def test_invalid_and_non_windows_refused(monkeypatch):
     with pytest.raises(ValueError): credentials.set_key("evil", "12345678901234567890")
     with pytest.raises(ValueError): credentials.set_key("openai", "weak")
-    with pytest.raises(credentials.CredentialUnavailable): credentials.vault()
+    import os
+    if os.name != "nt":
+        with pytest.raises(credentials.CredentialUnavailable): credentials.vault()
 
 def test_mock_provider_check_not_actual_api():
     called = []
