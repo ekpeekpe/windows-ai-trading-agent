@@ -367,6 +367,7 @@ export default function App() {
                 <button type="button" onClick={()=>void refreshChatGPT()}>Refresh status</button>
                 <button type="button" disabled={!chatgptState?.connected} onClick={()=>void signOutChatGPT()}>Disconnect</button>
               </div>
+              <p role="status" aria-live="polite" className="dialog-feedback">{connectionResult||'Use your system browser to authorize this open-source application.'}</p>
               {(chatgptState?.accounts?.length||0)>0&&<label className="field">Previously registered account
                 <select value={chosenAccount} onChange={e=>setChosenAccount(e.target.value)}>
                   <option value="">Choose a saved account</option>
