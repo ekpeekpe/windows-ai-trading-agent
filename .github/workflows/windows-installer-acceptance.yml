@@ -1,9 +1,8 @@
 name: Windows installer install-and-launch acceptance
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/windows-installer-acceptance.yml
+  workflow_run:
+    workflows: ["Windows NSIS installer candidate"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -15,13 +14,14 @@ permissions:
   actions: read
 jobs:
   install-test:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: windows-ai-trading-agent-nsis-unsigned
-          run-id: ${{ inputs.source_run_id || '38072956116' }}
+          run-id: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.source_run_id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/installer
       - name: Install and launch actual NSIS application (no MT5 or API credentials)
@@ -79,8 +79,21 @@ jobs:
             Write-Host 'PASS: NSIS installed application launches and its bundled read-only Python backend answers HTTP'
           } finally {
             if (-not $gui.HasExited) {
-              if ($gui.CloseMainWindow()) { $null = $gui.WaitForExit(15000) }
-              if (-not $gui.HasExited) { Stop-Process -Id $gui.Id -Force }
+              $graceful = $gui.CloseMainWindow()
+              Write-Host ('Window close request delivered: ' + $graceful)
+              if ($graceful) { $null = $gui.WaitForExit(15000) }
+              if ($graceful -and $gui.HasExited) {
+                Start-Sleep -Seconds 3
+                $orphans = @(Get-Process -Name 'agent-backend' -ErrorAction SilentlyContinue)
+                if ($orphans.Count -ne 0) {
+                  throw 'Desktop exited gracefully but a frozen Python backend process remained'
+                }
+                Write-Host 'PASS: Graceful UI shutdown removed the packaged Python process tree'
+              }
+              if (-not $gui.HasExited) {
+                Write-Host 'GUI cannot close gracefully on this runner; stopping test process'
+                Stop-Process -Id $gui.Id -Force
+              }
             }
           }
   report:
