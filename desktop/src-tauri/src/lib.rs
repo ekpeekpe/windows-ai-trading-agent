@@ -62,6 +62,34 @@ async fn backend_request(
     }
 }
 
+// Resolve actual browser executables, not PATH-dependent "msedge" or "chrome"
+// aliases. Windows installations commonly register those outside PATH.
+fn find_browser(choice: &str) -> Result<Option<String>, String> {
+    if choice == "default" { return Ok(None); }
+    let relative = match choice {
+        "edge" => "Microsoft\\Edge\\Application\\msedge.exe",
+        "chrome" => "Google\\Chrome\\Application\\chrome.exe",
+        _ => return Err("Choose Default, Edge, or Chrome".into())
+    };
+    #[cfg(windows)]
+    {
+        for variable in ["ProgramFiles(x86)", "PROGRAMFILES", "ProgramW6432", "LOCALAPPDATA"] {
+            if let Some(root) = std::env::var_os(variable) {
+                let candidate = std::path::PathBuf::from(root).join(relative);
+                if candidate.is_file() {
+                    return Ok(Some(candidate.to_string_lossy().into_owned()));
+                }
+            }
+        }
+        return Err(format!("{} was not found. Choose Default browser or install it first.",
+            if choice == "edge" { "Microsoft Edge" } else { "Google Chrome" }));
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(Some(if choice=="edge" { "microsoft-edge" } else { "google-chrome" }.into()))
+    }
+}
+
 // Only native Rust sees the OAuth URL; the webview never receives the PKCE
 // state, nonce, authorization URL, or bearer token. Default/Edge/Chrome
 // selection lets users authorize accounts in independent browser profiles.
@@ -72,12 +100,7 @@ async fn chatgpt_login(
     account_key: Option<String>,
     browser: String
 ) -> Result<Value, String> {
-    let with_browser = match browser.as_str() {
-        "default" => None,
-        "edge" => Some("msedge"),
-        "chrome" => Some("chrome"),
-        _ => return Err("Choose Default, Edge, or Chrome".into())
-    };
+    let with_browser = find_browser(&browser)?;
     if let Some(id) = &account_key {
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("Invalid saved account reference".into());
@@ -200,6 +223,8 @@ mod tests {
         assert!(allowed("POST", "/providers/openai/test"));
         assert!(allowed("POST", "/chatgpt/start"));
         assert!(allowed("POST", "/chatgpt/cancel"));
+        assert!(super::find_browser("default").unwrap().is_none());
+        assert!(super::find_browser("untrusted-browser").is_err());
         assert!(allowed("GET", "/chatgpt/status"));
         assert!(!allowed("GET", "/chatgpt/callback"));
         assert!(!allowed("POST", "/order_send"));
