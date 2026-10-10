@@ -9,7 +9,6 @@ type Dialog = 'provider' | 'terminal' | 'market' | 'proposal' | 'settings' | 'di
 type Line = { role: 'You' | 'Assistant' | 'Error'; text: string };
 type Proposal = {account: number; symbol: string; side: string; volume: string; stop_loss?: string | null; take_profit?: string | null};
 type Pending = {id: string; proposal: Proposal};
-const modelDefaults: Record<Provider,string> = {chatgpt:'gpt-6.1-sol',openai:'gpt-4.1-mini',anthropic:'claude-sonnet-4-5',gemini:'gemini-2.5-flash'};
 const names: Record<Provider,string> = {chatgpt:'ChatGPT plan (Codex)',openai:'OpenAI API',anthropic:'Anthropic API',gemini:'Google Gemini'};
 const choices: Provider[] = ['chatgpt','openai','anthropic','gemini'];
 function explain(error: unknown) { return error instanceof Error ? error.message : String(error); }
@@ -381,60 +380,101 @@ export default function App() {
       </main>
     </div>
     {dialog&&<div className="modal-scrim" onMouseDown={e=>{if(e.target===e.currentTarget)setDialog(null);}}>
-      <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <section className={'dialog '+(dialog==='provider'?'provider-dialog':'')} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
         <div className="dialog-head"><h2 id="dialog-title" tabIndex={-1} ref={dialogRef}>{
           {provider:'AI connections',terminal:'MetaTrader terminals',market:'Market data',proposal:'Trade proposal preview',
            settings:'Appearance and voice',diagnostics:'Diagnostics',about:'About AI Trading Agent'}[dialog]
         }</h2><button type="button" className="icon-button" aria-label="Close dialog" onClick={()=>setDialog(null)}>✕</button></div>
         <div className="dialog-body">
-          {dialog==='provider'&&<>
-            <p className="subtle">ChatGPT-plan and separately billed provider API connections are independent.</p>
-            <div className="provider-list" role="group" aria-label="AI provider">
-              {choices.map(p=><button key={p} type="button" className={'provider-option '+(provider===p?'selected':'')}
-                onClick={()=>setChosenProvider(p)}><span>{names[p]}</span><span className="option-status">{p==='chatgpt'?(chatgptState?.connected?'Signed in':'Not signed in'):(connected[p]?'Key configured':'Not connected')}</span></button>)}
-            </div>
-            {provider==='chatgpt'?<>
-              <div className="info-note">
-                <strong>Official open-source ChatGPT sign-in</strong>
-                <p>Use an eligible ChatGPT plan. A separate OpenAI API key is not needed. OpenAI issues your client ID when you authorize the app in your system browser.</p>
-                <p role="status">Connection: {chatgptState?.connected?'Signed in as '+(chatgptState.email||'ChatGPT account'):
-                  chatgptState?.state==='waiting_for_browser'?'Waiting for browser consent':'Not signed in'}.
-                  {' '}Plan usage: {chatgptState?.usage_enabled?'Authorized':'Not verified'}.</p>
+          {dialog==='provider'&&<div className="connection-shell">
+            <nav className="connection-rail" aria-label="AI provider">
+              {choices.map(p=><button key={p} type="button"
+                className={'connection-choice '+(provider===p?'selected':'')}
+                onClick={()=>setChosenProvider(p)}>
+                <span>{names[p]}</span>
+                <small>{p==='chatgpt'?
+                  (chatgptState?.connected?'Signed in':'Not signed in'):
+                  (connected[p]?'Key configured':'Not connected')}</small>
+              </button>)}
+            </nav>
+            <div className="connection-pane">
+              <div className="connection-heading">
+                <strong>{names[provider]}</strong>
+                <span className={'connection-state '+(provider==='chatgpt'?
+                  (chatgptState?.connected?'online':'offline'):(connected[provider]?'online':'offline'))}>
+                  {provider==='chatgpt'?(chatgptState?.connected?'Connected':'Disconnected'):
+                    (connected[provider]?'Configured':'Not configured')}
+                </span>
               </div>
-              <div className="action-row">
-                <button className="primary" type="button" onClick={()=>void startChatGPT()}>Continue with ChatGPT</button>
-                <button type="button" onClick={()=>void refreshChatGPT()}>Refresh status</button>
-                <button type="button" disabled={!chatgptState?.connected} onClick={()=>void signOutChatGPT()}>Disconnect</button>
+              {provider==='chatgpt'?<>
+                <div className="connection-group">
+                  <label className="compact-label" htmlFor="chatgpt-browser">Sign-in browser</label>
+                  <div className="connection-buttons">
+                    <select id="chatgpt-browser" aria-label="Sign-in browser" value={browserChoice}
+                      onChange={e=>setBrowserChoice(e.target.value as 'default'|'edge'|'chrome')}>
+                      <option value="default">Default browser</option>
+                      <option value="edge">Microsoft Edge</option>
+                      <option value="chrome">Google Chrome</option>
+                    </select>
+                    <button type="button" className="primary" onClick={()=>void startChatGPT()}>
+                      {chatgptState?.connected?'Add another account':'Continue with ChatGPT'}
+                    </button>
+                  </div>
+                  <small className="connection-help">Opens the official sign-in in your selected browser. Choose an account there.</small>
+                </div>
+                {(chatgptState?.accounts?.length||0)>0&&<div className="connection-group">
+                  <label className="compact-label" htmlFor="saved-chatgpt-account">Saved accounts</label>
+                  <div className="connection-buttons">
+                    <select id="saved-chatgpt-account" value={chosenAccount} onChange={e=>setChosenAccount(e.target.value)}>
+                      <option value="">Choose an account</option>
+                      {chatgptState?.accounts?.map(a=><option key={a.key} value={a.key}>
+                        {a.email||'Account '+a.key.slice(0,8)}{a.connected?' · Authorized':''}
+                      </option>)}
+                    </select>
+                    <button type="button" disabled={!chosenAccount} onClick={()=>void selectSavedAccount()}>Switch</button>
+                    <button type="button" disabled={!chosenAccount} onClick={()=>void startChatGPT(chosenAccount)}>Re-sign in</button>
+                  </div>
+                </div>}
+                <div className="connection-inline-actions">
+                  <button type="button" onClick={()=>void refreshChatGPT()}>Refresh status</button>
+                  <button type="button" disabled={!chatgptState?.connected} onClick={()=>void signOutChatGPT()}>Disconnect active account</button>
+                </div>
+              </>:<>
+                <div className="connection-group">
+                  <label className="compact-label" htmlFor="provider-secret">API key</label>
+                  <input id="provider-secret" type="password" autoComplete="new-password" value={key}
+                    onChange={e=>setKey(e.target.value)} placeholder={'Enter '+names[provider]+' API key'}/>
+                  <div className="connection-inline-actions">
+                    <button type="button" className="primary" disabled={key.length<12} onClick={()=>void manageKey('save')}>Save</button>
+                    <button type="button" disabled={!connected[provider]} onClick={()=>void manageKey('test')}>Test connection</button>
+                    <button type="button" disabled={!connected[provider]} onClick={()=>void manageKey('remove')}>Remove</button>
+                  </div>
+                </div>
+              </>}
+              <div className="connection-group model-group">
+                <label className="compact-label" htmlFor="provider-model">AI model · older to newer where release dates are known</label>
+                <div className="connection-buttons">
+                  <select id="provider-model" aria-label="Model" value={model} disabled={!modelChoices[provider].length}
+                    onChange={e=>setModel(e.target.value)}>
+                    <option value=""> {modelChoices[provider].length?'Select a model':'Connect and load models first'}</option>
+                    {modelChoices[provider].map(m=><option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                  <button type="button" onClick={()=>void loadProviderModels(provider)}
+                    disabled={provider==='chatgpt'?!chatgptState?.usage_enabled:!connected[provider]}>Refresh models</button>
+                </div>
               </div>
-              <p role="status" aria-live="polite" className="dialog-feedback">{connectionResult||'Use your system browser to authorize this open-source application.'}</p>
-              {(chatgptState?.accounts?.length||0)>0&&<label className="field">Previously registered account
-                <select value={chosenAccount} onChange={e=>setChosenAccount(e.target.value)}>
-                  <option value="">Choose a saved account</option>
-                  {chatgptState?.accounts?.map(a=><option key={a.key} value={a.key}>{a.email||a.key}{a.connected?' · Connected':''}</option>)}
-                </select>
+              {provider==='chatgpt'&&<div className="connection-inline-actions">
+                <button type="button" className="primary" disabled={!chatgptState?.usage_enabled||!model}
+                  onClick={()=>void testChatGPT()}>Test ChatGPT response</button>
+              </div>}
+              {!native&&<label className="field">Development token
+                <input type="password" value={token} onChange={e=>setToken(e.target.value)}/>
               </label>}
-              {chosenAccount&&<button type="button" onClick={()=>void startChatGPT(chosenAccount)}>Reauthorize selected account</button>}
-              <label className="field">Model
-                {chatgptModels.length>0?<select value={model} onChange={e=>setModel(e.target.value)}>
-                  {chatgptModels.map(m=><option key={m.slug} value={m.slug}>{m.display_name}</option>)}</select>:
-                  <input value={model} onChange={e=>setModel(e.target.value)} aria-label="ChatGPT model identifier"/>}
-              </label>
-              <div className="action-row">
-                <button type="button" disabled={!chatgptState?.usage_enabled} onClick={()=>void loadChatGPTModels()}>Load account models</button>
-                <button type="button" disabled={!chatgptState?.usage_enabled} onClick={()=>void testChatGPT()}>Test real ChatGPT inference</button>
-              </div>
-              <p className="subtle">A successful model list is not entitlement verification. Limits and credits can be reviewed in ChatGPT Settings; no balance is invented here.</p>
-            </>:<>
-            <label className="field">Model identifier<input value={model} onChange={e=>setModel(e.target.value)}/></label>
-            <label className="field">API key<input type="password" autoComplete="new-password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Paste provider API key"/></label>
-            <div className="action-row"><button className="primary" type="button" disabled={key.length<12} onClick={()=>void manageKey('save')}>Save key</button>
-              <button type="button" onClick={()=>void manageKey('test')}>Test connection</button>
-              <button type="button" onClick={()=>void manageKey('remove')}>Remove</button></div>
-            <p role="status" className="dialog-feedback">{connectionResult||'A saved key is not verification. Sign in or run a real connection test.'}</p>
-            {!native&&<label className="field">Development-only local access token<input type="password" value={token} onChange={e=>setToken(e.target.value)}/></label>}
-            </>}
-            <div className="info-note"><strong>Claude account sign-in</strong><p>Unavailable for this independent app. Anthropic API-key access remains supported.</p></div>
-          </>}
+              <p role="status" aria-live="polite" className="connection-feedback">
+                {connectionResult||chatgptState?.error||'Select an account or provider, then connect to load its models.'}
+              </p>
+            </div>
+          </div>}
           {dialog==='terminal'&&<>
             <p className="subtle">Select an installed terminal explicitly. Nothing is launched automatically.</p>
             <button type="button" onClick={()=>void discover()}>Discover installations</button>
