@@ -11,6 +11,8 @@ from .providers import AnthropicAgent, GeminiAgent
 from .safety import TradeProposal, ProposalStore
 from .audit import record
 from .tools import ToolRegistry
+from .chatgpt_auth import chatgpt, ChatGPTAuthError
+from .chatgpt_agent import ChatGPTAgent, ChatGPTInferenceError
 from .credentials import get_key, set_key, delete_key, connection_status, check_connection, CredentialUnavailable, validate_provider
 
 app = FastAPI(title="Windows AI Trading Agent", version="0.2.0")
@@ -30,7 +32,7 @@ def authorized(request: Request):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=3000)
     model: str = Field(min_length=1, max_length=100)
-    provider: str = Field(default="openai", pattern="^(openai|anthropic|gemini)$")
+    provider: str = Field(default="openai", pattern="^(openai|anthropic|gemini|chatgpt)$")
 
 class ProposalRequest(BaseModel):
     account: int
@@ -80,6 +82,12 @@ def quote(symbol: str):
 
 @app.post("/chat", dependencies=[Depends(authorized)])
 def chat(request: ChatRequest):
+    if request.provider == "chatgpt":
+        try:
+            token = chatgpt.access_token()
+            return {"answer": ChatGPTAgent(token, tools=ToolRegistry(mt5=mt5)).ask(request.message, request.model)}
+        except ChatGPTAuthError as exc:
+            raise HTTPException(status_code=409 if not isinstance(exc, ChatGPTInferenceError) else 502, detail=str(exc)) from exc
     secret = get_key(request.provider)
     if not secret:
         raise HTTPException(status_code=503, detail=f"No {request.provider} API key configured")
@@ -151,7 +159,7 @@ class KeyRequest(BaseModel):
 @app.get("/providers", dependencies=[Depends(authorized)])
 def providers_status():
     return {"providers": connection_status(), "account_auth": {
-            "chatgpt": "partner_approval_required",
+            "chatgpt": "open_source_dynamic_registration",
             "claude": "independent_app_flow_not_available"}}
 
 @app.put("/providers/{provider}/key", dependencies=[Depends(authorized)])
@@ -205,3 +213,46 @@ def terminals_select(request: TerminalSelection):
     mt5.terminal_path = request.path
     return {"selected": request.path, "connected": False,
             "message": "Terminal selected; connection and account not yet verified"}
+
+# Official open-source public-client OAuth: browser callback is bound to a
+# separate random loopback port, never the authenticated application HTTP port.
+class ChatGPTStartRequest(BaseModel):
+    account_key: str | None = Field(default=None, max_length=100)
+
+class ChatGPTTestRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=100)
+
+@app.get("/chatgpt/status", dependencies=[Depends(authorized)])
+def chatgpt_status():
+    return chatgpt.status()
+
+@app.post("/chatgpt/start", dependencies=[Depends(authorized)])
+def chatgpt_start(request: ChatGPTStartRequest):
+    try:
+        return chatgpt.start(request.account_key)
+    except (CredentialUnavailable, ChatGPTAuthError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+@app.get("/chatgpt/models", dependencies=[Depends(authorized)])
+def chatgpt_models():
+    try:
+        return {"models": chatgpt.models(), "catalog_is_not_entitlement": True}
+    except ChatGPTAuthError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.post("/chatgpt/test", dependencies=[Depends(authorized)])
+def chatgpt_test(request: ChatGPTTestRequest):
+    try:
+        result = ChatGPTAgent(chatgpt.access_token(), tools=ToolRegistry(mt5=mt5)).ask(
+            "Reply with exactly: ChatGPT plan connection verified.", request.model)
+        return {"verified": True, "response": result,
+                "note": "Verified by a completed inference turn, not model-list availability"}
+    except ChatGPTAuthError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+@app.post("/chatgpt/signout", dependencies=[Depends(authorized)])
+def chatgpt_signout():
+    try:
+        return chatgpt.signout()
+    except CredentialUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
