@@ -39,14 +39,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force desktop/src-tauri/binaries,desktop/src-tauri/icons | Out-Null
           Copy-Item backend/dist/agent-backend.exe desktop/src-tauri/binaries/agent-backend-x86_64-pc-windows-msvc.exe
-          @'
-          from PIL import Image,ImageDraw
-          from pathlib import Path
-          p=Path('desktop/src-tauri/icons'); p.mkdir(exist_ok=True)
-          i=Image.new('RGBA',(256,256),(22,31,48,255)); d=ImageDraw.Draw(i)
-          d.line([(24,173),(68,121),(117,147),(166,76),(231,53)],fill=(82,214,174,255),width=12)
-          i.save(p/'icon.png'); i.save(p/'icon.ico',format='ICO',sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          '@ | python -
+          python desktop/scripts/generate_icon.py
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
