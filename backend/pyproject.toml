@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "windows-ai-trading-agent"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
   "pydantic>=2.9,<3",
-  "openai>=1.60,<3"
+  "openai>=1.60,<3",
+  "python-multipart>=0.0.9,<1"
 ]
 
 [project.optional-dependencies]
