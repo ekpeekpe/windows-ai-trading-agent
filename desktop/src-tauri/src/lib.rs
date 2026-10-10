@@ -6,6 +6,7 @@ use std::time::Duration;
 use tauri::{Manager, State};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_opener::OpenerExt;
 use serde_json::Value;
 
 struct Backend {
@@ -24,7 +25,7 @@ fn valid_part(value: &str) -> bool {
 fn allowed(method: &str, path: &str) -> bool {
     match (method, path) {
         ("GET", "/health" | "/terminal" | "/providers" | "/terminals" | "/chatgpt/status" | "/chatgpt/models") => true,
-        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/start" | "/chatgpt/test" | "/chatgpt/signout") => true,
+        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/start" | "/chatgpt/test" | "/chatgpt/signout" | "/chatgpt/cancel") => true,
         _ => {
             let parts: Vec<&str> = path.split('/').collect();
             match (method, parts.as_slice()) {
@@ -57,6 +58,56 @@ async fn backend_request(
     if status.is_success() { Ok(payload) } else {
         Err(payload.get("detail").and_then(Value::as_str).unwrap_or("Backend request failed").to_string())
     }
+}
+
+// Only native Rust sees the OAuth URL; the webview never receives the PKCE
+// state, nonce, authorization URL, or bearer token. Default/Edge/Chrome
+// selection lets users authorize accounts in independent browser profiles.
+#[tauri::command]
+async fn chatgpt_login(
+    app: tauri::AppHandle,
+    state: State<'_, Backend>,
+    account_key: Option<String>,
+    browser: String
+) -> Result<Value, String> {
+    let with_browser = match browser.as_str() {
+        "default" => None,
+        "edge" => Some("msedge"),
+        "chrome" => Some("chrome"),
+        _ => return Err("Choose Default, Edge, or Chrome".into())
+    };
+    if let Some(id) = &account_key {
+        if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("Invalid saved account reference".into());
+        }
+    }
+    if let Some(error) = &state.startup_error { return Err(error.clone()); }
+    let endpoint = format!("http://127.0.0.1:{}/chatgpt/start", state.port);
+    let response = state.client.post(endpoint)
+        .header("x-agent-token", &state.token)
+        .json(&serde_json::json!({"account_key":account_key, "launch_browser":false}))
+        .send().await.map_err(|_| "Local backend is unavailable".to_string())?;
+    let success = response.status().is_success();
+    let data: Value = response.json().await.map_err(|_| "Invalid sign-in response".to_string())?;
+    if !success {
+        return Err(data.get("detail").and_then(Value::as_str)
+            .unwrap_or("Could not initialize ChatGPT sign-in").to_string());
+    }
+    let raw = data.get("authorization_url").and_then(Value::as_str)
+        .ok_or("Backend did not provide a browser authorization URL")?;
+    let parsed = reqwest::Url::parse(raw).map_err(|_| "Malformed authorization URL")?;
+    if parsed.scheme() != "https" || parsed.host_str() != Some("auth.openai.com")
+        || parsed.path() != "/api/accounts/authorize"
+        || !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("Blocked unsafe OAuth browser destination".into());
+    }
+    if let Err(_err) = app.opener().open_url(raw, with_browser) {
+        let _ = state.client.post(format!("http://127.0.0.1:{}/chatgpt/cancel", state.port))
+            .header("x-agent-token", &state.token).send().await;
+        return Err("Windows could not launch that browser. Select Default browser, or ensure Edge/Chrome is installed.".into());
+    }
+    Ok(serde_json::json!({"state":"waiting_for_browser",
+                          "expires_in":300, "browser_opened":true}))
 }
 
 #[tauri::command]
@@ -105,6 +156,7 @@ fn stop_backend_process_tree(process: CommandChild) {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let listener = TcpListener::bind("127.0.0.1:0")?;
             let port = listener.local_addr()?.port();
@@ -125,7 +177,7 @@ pub fn run() {
                 client: reqwest::Client::builder().timeout(Duration::from_secs(100)).build()? });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![backend_request, backend_transcribe])
+        .invoke_handler(tauri::generate_handler![backend_request, backend_transcribe, chatgpt_login])
         .build(tauri::generate_context!()).expect("Failed to initialize desktop application");
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
@@ -145,6 +197,7 @@ mod tests {
         assert!(allowed("GET", "/health"));
         assert!(allowed("POST", "/providers/openai/test"));
         assert!(allowed("POST", "/chatgpt/start"));
+        assert!(allowed("POST", "/chatgpt/cancel"));
         assert!(allowed("GET", "/chatgpt/status"));
         assert!(!allowed("GET", "/chatgpt/callback"));
         assert!(!allowed("POST", "/order_send"));
