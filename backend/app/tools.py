@@ -20,8 +20,12 @@ class RatesArgs(SymbolArgs):
     timeframe: str = Field(default="H1", pattern=r"^(M1|M5|M15|M30|H1|H4|D1)$")
     count: int = Field(default=50, ge=1, le=500)
 
+class ChartArgs(SymbolArgs):
+    timeframe: str = Field(default="H1", pattern=r"^(M1|M5|M15|M30|H1|H4|D1)$")
+    period: int = Field(default=20, ge=2, le=500)
+
 class ToolRegistry:
-    def __init__(self, mt5: MT5ReadOnly | None = None):
+    def __init__(self, mt5: MT5ReadOnly | None = None, chart_ipc=None):
         self.mt5 = mt5 if mt5 is not None else MT5ReadOnly()
         self._tools: dict[str, tuple[type[BaseModel], str, Callable]] = {
             "terminal_status": (NoArgs, "Read actual MT5 terminal and account status", lambda x: self.mt5.status()),
@@ -32,6 +36,14 @@ class ToolRegistry:
             "open_positions": (NoArgs, "Read currently open positions", lambda x: self.mt5.positions()),
             "pending_orders": (NoArgs, "Read pending broker orders", lambda x: self.mt5.pending_orders()),
         }
+        # Only register chart-mutating operations when explicitly enabled and supplied.
+        if chart_ipc is not None:
+            self._tools["open_chart"] = (ChartArgs, "Open a broker symbol chart at a timeframe",
+                                          lambda x: chart_ipc.execute("OPEN", x.symbol, x.timeframe, x.period))
+            self._tools["add_sma"] = (ChartArgs, "Open chart and add a simple moving average",
+                                       lambda x: chart_ipc.execute("SMA", x.symbol, x.timeframe, x.period))
+            self._tools["add_ema"] = (ChartArgs, "Open chart and add an exponential moving average",
+                                       lambda x: chart_ipc.execute("EMA", x.symbol, x.timeframe, x.period))
 
     def definitions(self) -> list[dict]:
         return [{"type": "function", "function": {"name": name, "description": description,
