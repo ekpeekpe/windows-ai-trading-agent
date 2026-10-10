@@ -1,5 +1,6 @@
 """MOCKED MT5 tests: these DO NOT validate a live terminal."""
 import sys
+from time import time
 from types import SimpleNamespace
 import pytest
 from app.mt5 import MT5ReadOnly, MT5Unavailable
@@ -17,7 +18,7 @@ def fake_module(connected=True, login=42):
         account_info=lambda: SimpleNamespace(login=login, server='Demo', trade_mode=0),
         symbol_info=lambda name: SimpleNamespace(name=name, point=.00001, digits=5, volume_min=.01,
                   volume_max=100, volume_step=.01, trade_mode=4, visible=True),
-        symbol_info_tick=lambda symbol: SimpleNamespace(bid=1.1, ask=1.2, time_msc=123000),
+        symbol_info_tick=lambda symbol: SimpleNamespace(bid=1.1, ask=1.2, time_msc=int(time() * 1000)),
         symbols_get=lambda: [SimpleNamespace(name='EURUSD')],
         positions_get=lambda: [], orders_get=lambda: [],
         copy_rates_from_pos=lambda *a: [], TIMEFRAME_H1=16385,
@@ -31,7 +32,7 @@ def test_mocked_read_methods(monkeypatch):
     assert gateway.status()['account']['mode_label'] == 'demo'
     assert gateway.symbols()['total'] == 1
     assert gateway.specifications('EURUSD')['volume_step'] == .01
-    assert gateway.quote('EURUSD')['time_msc'] == 123000
+    assert gateway.quote('EURUSD')['age_seconds'] < 60
     assert gateway.rates('EURUSD')['bars'] == []
     assert gateway.positions()['positions'] == []
     assert gateway.pending_orders()['orders'] == []
@@ -53,3 +54,34 @@ def test_mocked_disconnection_and_account_mismatch(monkeypatch):
 def test_count_is_bounded(bad):
     with pytest.raises(ValueError):
         MT5ReadOnly().rates('EURUSD', count=bad)
+
+
+def test_quote_selects_invisible_symbol_without_account_trade(monkeypatch):
+    module, calls = fake_module()
+    module.symbol_info = lambda name: SimpleNamespace(visible=False)
+    module.symbol_select = lambda symbol, enabled: calls.append(('symbol_select', (symbol, enabled), {})) or True
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', module)
+    quote = MT5ReadOnly().quote('EURUSD')
+    assert quote['source'] == 'MetaTrader5'
+    assert any(name == 'symbol_select' and args == ('EURUSD', True) for name,args,_ in calls)
+    assert not any(name == 'order_send' for name,_,_ in calls)
+
+
+def test_old_or_invalid_ticks_fail_closed(monkeypatch):
+    module, _ = fake_module()
+    module.symbol_info_tick = lambda symbol: SimpleNamespace(bid=1.1, ask=1.2, time_msc=123000)
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', module)
+    with pytest.raises(MT5Unavailable, match='Stale'):
+        MT5ReadOnly().quote('EURUSD')
+    module.symbol_info_tick = lambda symbol: SimpleNamespace(bid=0.0, ask=1.2, time_msc=int(time() * 1000))
+    with pytest.raises(MT5Unavailable, match='Invalid bid'):
+        MT5ReadOnly().quote('EURUSD')
+
+
+def test_symbol_select_failure_reported(monkeypatch):
+    module, _ = fake_module()
+    module.symbol_info = lambda name: SimpleNamespace(visible=False)
+    module.symbol_select = lambda symbol, enabled: False
+    monkeypatch.setitem(sys.modules, 'MetaTrader5', module)
+    with pytest.raises(MT5Unavailable, match='Cannot select'):
+        MT5ReadOnly().quote('EURUSD')
