@@ -4,6 +4,7 @@ import './app.css';
 
 const native = '__TAURI_INTERNALS__' in window;
 type Provider = 'chatgpt' | 'openai' | 'anthropic' | 'gemini';
+type ModelChoice = {id:string; label:string; created_at?:string|null};
 type Dialog = 'provider' | 'terminal' | 'market' | 'proposal' | 'settings' | 'diagnostics' | 'about' | null;
 type Line = { role: 'You' | 'Assistant' | 'Error'; text: string };
 type Proposal = {account: number; symbol: string; side: string; volume: string; stop_loss?: string | null; take_profit?: string | null};
@@ -17,7 +18,9 @@ const now = () => new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-di
 export default function App() {
   const [token,setToken] = useState('');
   const [provider,setProvider] = useState<Provider>('chatgpt');
-  const [model,setModel] = useState(modelDefaults.chatgpt);
+  const [model,setModel] = useState('');
+  const [modelChoices,setModelChoices] = useState<Record<Provider,ModelChoice[]>>({chatgpt:[],openai:[],anthropic:[],gemini:[]});
+  const [browserChoice,setBrowserChoice] = useState<'default'|'edge'|'chrome'>('default');
   const [message,setMessage] = useState('');
   const [lines,setLines] = useState<Line[]>([]);
   const [status,setStatus] = useState('Starting AI services…');
@@ -27,7 +30,7 @@ export default function App() {
   const [key,setKey] = useState('');
   const [connectionResult,setConnectionResult] = useState('');
   const [chatgptState,setChatgptState] = useState<{available:boolean;connected:boolean;usage_enabled:boolean;state:string;email?:string|null;error?:string|null;accounts?:{key:string;email?:string|null;connected:boolean}[]}|null>(null);
-  const [chatgptModels,setChatgptModels] = useState<{slug:string;display_name:string}[]>([]);
+
   const [chosenAccount,setChosenAccount] = useState('');
   const [busy,setBusy] = useState(false);
   const [recording,setRecording] = useState(false);
@@ -81,7 +84,11 @@ export default function App() {
   async function startChatGPT(account_key?:string){
     setConnectionResult('Opening the system browser for ChatGPT authorization…');
     try{
-      await api('/chatgpt/start','POST',{account_key:account_key||null});
+      if(native){
+        await invoke('chatgpt_login',{accountKey:account_key||null,browser:browserChoice});
+      }else{
+        await api('/chatgpt/start','POST',{account_key:account_key||null,launch_browser:true});
+      }
       setConnectionResult('Complete authorization in your browser; return here when finished.');
       await refreshChatGPT();
     }catch(e){setConnectionResult('Sign-in could not start: '+explain(e));}
@@ -89,11 +96,35 @@ export default function App() {
   async function loadChatGPTModels(){
     try{
       const result=await api('/chatgpt/models');
-      setChatgptModels(result.models||[]);
-      const first=result.models?.[0]?.slug;
-      if(first && provider==='chatgpt')setModel(first);
+      const entries:ModelChoice[]=(result.models||[]).map((m:{slug:string;display_name:string;created_at?:string})=>
+        ({id:m.slug,label:m.display_name||m.slug,created_at:m.created_at}));
+      setModelChoices(x=>({...x,chatgpt:entries}));
+      if(provider==='chatgpt')setModel(entries[entries.length-1]?.id||'');
       setConnectionResult('Model catalog loaded. A model list does not establish plan entitlement.');
     }catch(e){setConnectionResult('Model list unavailable: '+explain(e));}
+  }
+  async function loadProviderModels(p:Provider){
+    if(p==='chatgpt'){await loadChatGPTModels();return;}
+    try{
+      const response=await api('/providers/'+p+'/models');
+      const entries:ModelChoice[]=response.models||[];
+      setModelChoices(current=>({...current,[p]:entries}));
+      if(provider===p)setModel(entries[entries.length-1]?.id||'');
+      setConnectionResult(entries.length?
+        'Available models loaded, oldest to newest when release dates are provided.':
+        'This key returned no compatible chat models.');
+    }catch(e){
+      setConnectionResult('Could not load '+names[p]+' models: '+explain(e));
+    }
+  }
+  async function selectSavedAccount(){
+    if(!chosenAccount)return;
+    try{
+      await api('/chatgpt/select','POST',{account_key:chosenAccount});
+      setConnectionResult('Switched ChatGPT account. Loading its available models…');
+      setModelChoices(x=>({...x,chatgpt:[]}));
+      await refreshChatGPT();await loadChatGPTModels();
+    }catch(e){setConnectionResult('Account switch failed: '+explain(e));}
   }
   async function testChatGPT(){
     setConnectionResult('Running a real ChatGPT-plan inference test…');
@@ -107,7 +138,7 @@ export default function App() {
       const result=await api('/chatgpt/signout','POST');
       setConnectionResult(result.remote_revocation_confirmed?'Signed out and remote session revoked.':
         'Signed out locally. Remote revocation could not be confirmed; review connected apps in ChatGPT Settings.');
-      setChatgptModels([]);await refreshChatGPT();
+      setModelChoices(x=>({...x,chatgpt:[]}));setModel('');await refreshChatGPT();
     }catch(e){setConnectionResult('Sign-out failed: '+explain(e));}
   }
   useEffect(()=>{
@@ -170,7 +201,12 @@ export default function App() {
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
   },[dialog]);
-  function setChosenProvider(p:Provider){setProvider(p);setModel(modelDefaults[p]);setConnectionResult('');if(p==='chatgpt')void refreshChatGPT();}
+  function setChosenProvider(p:Provider){
+    setProvider(p);setModel(modelChoices[p][modelChoices[p].length-1]?.id||'');
+    setConnectionResult('');
+    if(p==='chatgpt')void refreshChatGPT();
+    else if(connected[p])void loadProviderModels(p);
+  }
   function say(text:string){
     setLastSpoken(text);
     if('speechSynthesis' in window){window.speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.rate=1;window.speechSynthesis.speak(u);}
@@ -194,6 +230,7 @@ export default function App() {
   async function send(e?:React.FormEvent){
     e?.preventDefault();
     if(busy||!message.trim())return;
+    if(!model){setStatus('Connect your provider and select a model first');chooseDialog('provider');return;}
     const prompt=message.trim();
     setMessage('');setBusy(true);setMenu(null);
     setLines(x=>[...x,{role:'You',text:prompt}]);setStatus('AI is responding…');
@@ -240,6 +277,8 @@ export default function App() {
       setConnectionResult(action==='save'?'Key stored · connection not yet verified':action==='remove'?'Stored credential removed':
         data.verified?'Connection verified by the provider':'Provider not verified');
       await connections();
+      if(action==='remove'){setModelChoices(x=>({...x,[provider]:[]}));setModel('');}
+      else await loadProviderModels(provider);
     }catch(e){setKey('');setConnectionResult('Connection failed: '+explain(e));}
   }
   async function discover(){
