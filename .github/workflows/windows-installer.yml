@@ -93,6 +93,33 @@ jobs:
       - name: Build native Tauri 2 NSIS installer
         working-directory: desktop
         run: npm run tauri build -- --bundles nsis
+      - name: Inspect unsigned installer and scan with Defender where available
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'desktop/src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Installer missing at security checkpoint' }
+          $sig = Get-AuthenticodeSignature -FilePath $installer.FullName
+          Write-Host ('Authenticode status: ' + $sig.Status)
+          if ($sig.Status -eq 'NotSigned') {
+            Write-Warning 'UNSIGNED DEVELOPMENT INSTALLER. Do not present this artifact as trusted/signed.'
+          } elseif ($sig.Status -ne 'Valid') {
+            throw ('Invalid or untrusted Authenticode signature: ' + $sig.Status)
+          } else {
+            Write-Host ('Verified signed publisher: ' + $sig.SignerCertificate.Subject)
+          }
+          $defender = Get-Command Start-MpScan -ErrorAction SilentlyContinue
+          $state = Get-MpComputerStatus -ErrorAction SilentlyContinue
+          if ($defender -and $state -and $state.AntivirusEnabled) {
+            Start-MpScan -ScanType CustomScan -ScanPath $installer.FullName -ErrorAction Stop
+            $detections = @(Get-MpThreatDetection -ErrorAction SilentlyContinue | Where-Object {
+              ($_.Resources -join ' ') -like ('*' + $installer.Name + '*')
+            })
+            if ($detections.Count) { throw 'Defender detection on installer — halt distribution and review detection name in Windows Security' }
+            Write-Host 'Defender scan completed without detection for installer'
+          } else {
+            Write-Warning 'Defender scanning unavailable on this runner; malware scan NOT VERIFIED'
+          }
       - name: Record artifact digests
         shell: pwsh
         run: |
