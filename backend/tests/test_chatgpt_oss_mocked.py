@@ -26,10 +26,10 @@ class HTTPMock:
     def __exit__(self,*args):pass
     def post(self,url,data):
         self.history.append((url,data))
+        if "token_type_hint" in data:return FakeResponse({})
         if data["grant_type"]=="refresh_token":
             return FakeResponse({"access_token":"refreshed-access","refresh_token":"rotated-refresh",
                                  "expires_in":3600})
-        if "token_type_hint" in data:return FakeResponse({})
         return FakeResponse({"id_token":"test-id-token","access_token":"test-access-token",
                              "refresh_token":"test-refresh-token","scope":
                              "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct",
