@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "windows-ai-trading-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "pydantic>=2.9,<3",
+  "openai>=1.60,<3"
+]
+
+[project.optional-dependencies]
+windows = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
+dev = ["pytest>=8.3,<10", "httpx>=0.27,<1"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
