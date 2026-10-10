@@ -1,14 +1,27 @@
-"""Loopback-only development API. Trading submission intentionally absent."""
+"""Authenticated loopback development API. Does not support broker order submission."""
+from __future__ import annotations
+import hmac
 import os
-from fastapi import FastAPI, HTTPException
+from decimal import Decimal, InvalidOperation
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 from .mt5 import MT5ReadOnly, MT5Unavailable
-from .agent import OpenAIAgent
+from .agent import OpenAIAgent, AgentCancelled, ProviderProtocolError
 from .safety import TradeProposal, ProposalStore
 
-app = FastAPI(title="Windows AI Trading Agent", version="0.1.0")
-mt5 = MT5ReadOnly(os.getenv("MT5_TERMINAL_PATH") or None)
+app = FastAPI(title="Windows AI Trading Agent", version="0.2.0")
+mt5 = MT5ReadOnly(os.getenv("MT5_TERMINAL_PATH") or None,
+                  int(os.environ["MT5_EXPECTED_LOGIN"]) if os.getenv("MT5_EXPECTED_LOGIN") else None)
 proposals = ProposalStore()
+
+
+def authorized(request: Request):
+    expected = os.getenv("AGENT_LOCAL_TOKEN", "")
+    if len(expected) < 24:
+        raise HTTPException(status_code=503, detail="Configure AGENT_LOCAL_TOKEN (at least 24 characters)")
+    received = request.headers.get("x-agent-token", "")
+    if not hmac.compare_digest(received, expected):
+        raise HTTPException(status_code=401, detail="Invalid local access token")
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=3000)
@@ -26,54 +39,62 @@ class DecisionRequest(BaseModel):
     proposal: ProposalRequest
     approve: bool
 
+
 def unpack(p: ProposalRequest) -> TradeProposal:
-    from decimal import Decimal, InvalidOperation
     try:
         return TradeProposal(p.account, p.symbol, p.side, Decimal(p.volume),
-                             Decimal(p.stop_loss) if p.stop_loss else None,
-                             Decimal(p.take_profit) if p.take_profit else None)
+                             Decimal(p.stop_loss) if p.stop_loss is not None else None,
+                             Decimal(p.take_profit) if p.take_profit is not None else None)
     except (InvalidOperation, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise HTTPException(status_code=422, detail="Invalid trade parameters") from exc
 
 @app.get("/health")
 def health():
-    return {"ok": True, "mode": "read_only", "trading_enabled": False}
+    return {"ok": True, "mode": "read_only", "trading_enabled": False,
+            "authentication_required": True}
 
-@app.get("/terminal")
+@app.get("/terminal", dependencies=[Depends(authorized)])
 def terminal():
     try:
         return mt5.status()
     except MT5Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-@app.get("/quote/{symbol}")
+@app.get("/quote/{symbol}", dependencies=[Depends(authorized)])
 def quote(symbol: str):
     from .tools import SymbolArgs
     try:
         validated = SymbolArgs(symbol=symbol)
-        return mt5.quote(validated.symbol)
     except Exception as exc:
+        raise HTTPException(status_code=422, detail="Invalid symbol") from exc
+    try:
+        return mt5.quote(validated.symbol)
+    except MT5Unavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(authorized)])
 def chat(request: ChatRequest):
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
     try:
         return {"answer": OpenAIAgent().ask(request.message, request.model)}
+    except AgentCancelled as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ProviderProtocolError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"AI provider request failed: {type(exc).__name__}") from exc
+        raise HTTPException(status_code=502, detail=f"AI request failed: {type(exc).__name__}") from exc
 
-@app.post("/proposals")
+@app.post("/proposals", dependencies=[Depends(authorized)])
 def prepare(request: ProposalRequest):
     proposal = unpack(request)
     return {"id": proposals.prepare(proposal), "proposal": request.model_dump(),
             "status": "pending", "execution_enabled": False}
 
-@app.post("/proposals/{proposal_id}/decision")
+@app.post("/proposals/{proposal_id}/decision", dependencies=[Depends(authorized)])
 def decide(proposal_id: str, request: DecisionRequest):
     try:
-        status = proposals.resolve(proposal_id, request.approve, unpack(request.proposal))
-        return {"status": status, "order_submitted": False}
+        state = proposals.resolve(proposal_id, request.approve, unpack(request.proposal))
+        return {"status": state, "order_submitted": False}
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
