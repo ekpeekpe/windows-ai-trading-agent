@@ -1,34 +1,47 @@
-"""Explicit allowlist; model cannot invoke Python or shell directly."""
-from pydantic import BaseModel, Field
+"""Bounded, typed registry: only explicitly allowlisted read tools reach MT5."""
+from __future__ import annotations
+from collections.abc import Callable
+from pydantic import BaseModel, ConfigDict, Field
 from .mt5 import MT5ReadOnly
 
-class SymbolArgs(BaseModel):
+class StrictArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+class NoArgs(StrictArgs):
+    pass
+
+class SymbolArgs(StrictArgs):
     symbol: str = Field(pattern=r"^[A-Za-z0-9._-]{1,32}$")
 
-class NoArgs(BaseModel):
-    pass
+class SymbolsArgs(StrictArgs):
+    limit: int = Field(default=100, ge=1, le=500)
+
+class RatesArgs(SymbolArgs):
+    timeframe: str = Field(default="H1", pattern=r"^(M1|M5|M15|M30|H1|H4|D1)$")
+    count: int = Field(default=50, ge=1, le=500)
 
 class ToolRegistry:
     def __init__(self, mt5: MT5ReadOnly | None = None):
-        self.mt5 = mt5 or MT5ReadOnly()
-        self._tools = {
-            "terminal_status": (NoArgs, lambda _: self.mt5.status()),
-            "quote": (SymbolArgs, lambda a: self.mt5.quote(a.symbol)),
-            "open_positions": (NoArgs, lambda _: self.mt5.positions()),
+        self.mt5 = mt5 if mt5 is not None else MT5ReadOnly()
+        self._tools: dict[str, tuple[type[BaseModel], str, Callable]] = {
+            "terminal_status": (NoArgs, "Read actual MT5 terminal and account status", lambda x: self.mt5.status()),
+            "symbols": (SymbolsArgs, "List broker symbols", lambda x: self.mt5.symbols(x.limit)),
+            "symbol_specifications": (SymbolArgs, "Read broker symbol specifications", lambda x: self.mt5.specifications(x.symbol)),
+            "quote": (SymbolArgs, "Get actual timestamped bid and ask", lambda x: self.mt5.quote(x.symbol)),
+            "historical_rates": (RatesArgs, "Read historical OHLC rates", lambda x: self.mt5.rates(x.symbol, x.timeframe, x.count)),
+            "open_positions": (NoArgs, "Read currently open positions", lambda x: self.mt5.positions()),
+            "pending_orders": (NoArgs, "Read pending broker orders", lambda x: self.mt5.pending_orders()),
         }
 
-    def definitions(self):
-        return [
-            {"type": "function", "function": {"name": name,
-             "description": {"terminal_status": "Get the actual MT5 terminal status and account identity",
-                             "quote": "Get a real, timestamped MT5 bid and ask",
-                             "open_positions": "Read actual open MT5 positions"}[name],
-             "parameters": schema.model_json_schema()}}
-            for name, (schema, _) in self._tools.items()
-        ]
+    def definitions(self) -> list[dict]:
+        return [{"type": "function", "function": {"name": name, "description": description,
+                 "parameters": schema.model_json_schema()}}
+                for name, (schema, description, _) in self._tools.items()]
 
     def execute(self, name: str, args: dict):
         if name not in self._tools:
             raise ValueError(f"Unregistered tool: {name}")
-        schema, handler = self._tools[name]
+        if not isinstance(args, dict):
+            raise ValueError("Tool arguments must be a JSON object")
+        schema, _, handler = self._tools[name]
         return handler(schema.model_validate(args))
