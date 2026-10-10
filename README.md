@@ -2,7 +2,7 @@
 
 Local-first, Windows-oriented MT5 assistant with typed chat, OpenAI/Anthropic/Gemini tool-call adapters, opt-in chart helper, microphone transcription, and deliberately disabled broker execution.
 
-**This is a development build.** The Python source and mocked integrations have portable tests. No Windows terminal, AI provider, MQL5 compilation, voice hardware, or Tauri package has yet been verified end-to-end.
+**This is an installer candidate, not a verified Windows release.** The Python source and mocked integrations have portable tests. No Windows terminal, AI provider, MQL5 compilation, voice hardware, or Tauri package has yet been verified end-to-end.
 
 ## Architecture
 
@@ -45,3 +45,15 @@ python -m pytest -q
 ```
 
 Real terminal/provider tests are opt-in; see `docs/TESTING.md`. All production packaging, broker order validation and demo execution remain incomplete.
+
+## Installer candidate and first launch
+
+A Windows GitHub Actions workflow at `.github/workflows/windows-installer.yml` attempts to bundle the Python backend (including the MT5 package) into a native Tauri 2 NSIS installer, with no Python or Node.js runtime installation required on customer computers. **The installer has not yet been proven to build or run on Windows; do not share it as a working release until the Actions artifact and Windows smoke test are verified.**
+
+See [docs/INSTALLER.md](docs/INSTALLER.md) for how to locate an actual successful Actions installer artifact, its limitations and the mandatory installation test. The installer does not install or launch MT5 automatically. The first-launch UI detects possible installed terminals and lets the user select one without placing trades. Provider keys can be saved via Windows Credential Manager, explicitly tested and removed. ChatGPT/Claude subscription sign-in is not yet enabled; see [docs/PROVIDER_AUTH.md](docs/PROVIDER_AUTH.md).
+
+There is **no app license key, application subscription, trial expiry, or payment gate** in this pilot. API provider billing is independent.
+
+### Tested portable features
+
+The Linux development environment most recently ran 54 Python tests successfully with 2 opt-in live tests skipped. This does not prove the Windows NSIS installer, provider credentials, or real MT5/voice acceptance. The packaged frontend TypeScript/Rust build and Windows sidecar freezing remain to be verified by Windows CI; check the Actions results rather than assuming a passed build.
