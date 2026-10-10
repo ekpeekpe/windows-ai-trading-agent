@@ -18,6 +18,8 @@ function App() {
   const [message, setMessage] = useState('');
   const [status, setStatus] = useState('Backend not checked');
   const [terminal, setTerminal] = useState('Not connected');
+  const [terminals, setTerminals] = useState<string[]>([]);
+  const [selectedTerminal, setSelectedTerminal] = useState('');
   const [lines, setLines] = useState<ChatLine[]>([]);
   const [lastSpoken, setLastSpoken] = useState('');
   const [busy, setBusy] = useState(false);
@@ -94,6 +96,20 @@ function App() {
         action === 'save' ? 'Key stored in Windows Credential Manager; not yet verified' : 'Stored key removed');
       await refreshConnections();
     } catch (e) { setApiKey(''); setConnectionResult('Connection action failed: ' + String(e)); }
+  }
+  async function discoverTerminals() {
+    try {
+      const found = await api('/terminals');
+      setTerminals(found.terminals); setSelectedTerminal(found.selected || found.terminals[0] || '');
+      setStatus(found.terminals.length ? 'Installed MT5 terminals found. Choose one to connect.' : 'MT5 not found. AI chat is still available.');
+    } catch (e) { setStatus('MT5 detection error: ' + String(e)); }
+  }
+  async function chooseTerminal() {
+    if (!selectedTerminal) return;
+    try {
+      const r = await api('/terminals/select',{method:'POST',body:JSON.stringify({path:selectedTerminal})});
+      setStatus(r.message); await checkTerminal();
+    } catch(e) { setStatus('Terminal selection failed: ' + String(e)); }
   }
   async function checkTerminal() {
     setStatus('Checking real terminal');
@@ -180,7 +196,16 @@ function App() {
          <button type="button" onClick={()=>credentialAction('remove')}>Remove key</button></p>
       <p role="status" aria-live="polite">{connectionResult}</p>
     </section>
-    <button type="button" onClick={checkTerminal}>Check MT5 terminal</button>
+    <section aria-label="MetaTrader 5 setup">
+      <h2>MetaTrader 5 (optional)</h2>
+      <p>MT5 is not automatically installed or launched. If it is missing, obtain the generic MetaQuotes installer from https://www.metatrader5.com/en before using trading data.</p>
+      <button type="button" onClick={discoverTerminals}>Discover installed terminals</button>{' '}
+      <label>Select terminal <select value={selectedTerminal} onChange={e=>setSelectedTerminal(e.target.value)}>
+        <option value="">None selected</option>{terminals.map(x=><option key={x} value={x}>{x}</option>)}
+      </select></label>{' '}
+      <button type="button" disabled={!selectedTerminal} onClick={chooseTerminal}>Select and check</button>{' '}
+      <button type="button" onClick={checkTerminal}>Check MT5 connection</button>
+    </section>
     <pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}} aria-label="Actual MT5 terminal status">{terminal}</pre>
     <form onSubmit={send}>
       <p><label>Model <input value={model} onChange={e=>setModel(e.target.value)} /></label></p>
