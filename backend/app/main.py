@@ -8,11 +8,13 @@ from pydantic import BaseModel, Field
 from .mt5 import MT5ReadOnly, MT5Unavailable
 from .agent import OpenAIAgent, AgentCancelled, ProviderProtocolError
 from .safety import TradeProposal, ProposalStore
+from .audit import record
+from .tools import ToolRegistry
 
 app = FastAPI(title="Windows AI Trading Agent", version="0.2.0")
 mt5 = MT5ReadOnly(os.getenv("MT5_TERMINAL_PATH") or None,
                   int(os.environ["MT5_EXPECTED_LOGIN"]) if os.getenv("MT5_EXPECTED_LOGIN") else None)
-proposals = ProposalStore()
+proposals = ProposalStore(audit=record)
 
 
 def authorized(request: Request):
@@ -77,7 +79,7 @@ def chat(request: ChatRequest):
     if not os.getenv("OPENAI_API_KEY"):
         raise HTTPException(status_code=503, detail="OPENAI_API_KEY is not configured")
     try:
-        return {"answer": OpenAIAgent().ask(request.message, request.model)}
+        return {"answer": OpenAIAgent(tools=ToolRegistry(mt5=mt5, chart_ipc=(ChartIPC(default_common_files()) if os.getenv("ENABLE_CHART_CONTROL") == "1" else None))).ask(request.message, request.model) }
     except AgentCancelled as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ProviderProtocolError as exc:
