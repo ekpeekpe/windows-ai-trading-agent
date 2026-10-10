@@ -25,7 +25,7 @@ fn valid_part(value: &str) -> bool {
 fn allowed(method: &str, path: &str) -> bool {
     match (method, path) {
         ("GET", "/health" | "/terminal" | "/providers" | "/terminals" | "/chatgpt/status" | "/chatgpt/models") => true,
-        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/start" | "/chatgpt/test" | "/chatgpt/signout" | "/chatgpt/cancel") => true,
+        ("POST", "/chat" | "/proposals" | "/chart" | "/terminals/select" | "/chatgpt/start" | "/chatgpt/test" | "/chatgpt/signout" | "/chatgpt/cancel" | "/chatgpt/select") => true,
         _ => {
             let parts: Vec<&str> = path.split('/').collect();
             match (method, parts.as_slice()) {
