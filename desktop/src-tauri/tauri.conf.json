@@ -18,10 +18,24 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765 ws://127.0.0.1:5173; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:5173 ws://127.0.0.1:5173; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "externalBin": [
+      "binaries/agent-backend"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
   }
 }
